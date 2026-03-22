@@ -2,19 +2,19 @@
 
 ![AI Cofounder Banner](banner.png)
 
-**Your AI Chief of Staff for startup operations.** 48 battle-tested skills that turn any AI agent into an augmented CEO — strategic reviews, hypothesis tracking, GTM playbooks, founder sales, and more.
+**Your AI Chief of Staff for startup operations.** 48 skills that turn any AI agent into an augmented CEO: strategic reviews, hypothesis tracking, GTM playbooks, founder sales, and more.
 
-Built for pre-PMF and early-stage startup founders who wear too many hats.
+Built for founders who wear too many hats.
 
-## Who Is This For
+## Who is this for
 
-**Technical founders** — this is a must-have. You're great at building product but likely underinvesting in strategy, sales, and marketing. These 48 skills fill the gap: structured frameworks for everything from weekly CEO reviews to cold email outreach — without hiring a Chief of Staff, a marketer, and a sales coach. If you catch yourself hiding in code instead of talking to customers, this system will call you out.
+**Technical founders** — honestly, this is a must-have. You're good at building product but probably underinvesting in strategy, sales, and marketing. These 48 skills fill that gap: structured frameworks for everything from weekly CEO reviews to cold email outreach, without needing to hire a Chief of Staff or a sales coach. If you catch yourself hiding in code instead of talking to customers, this system will call you out.
 
-**CEOs and business leaders** — a structured operating system for high-stakes decisions: hypothesis tracking with WIP limits, decision playbooks for pivots and hiring, self-deception audits that flag when you're confusing activity with progress, and a constraint-first approach that keeps you focused on what actually moves the needle. Works at any stage — from pre-PMF to scaling.
+**CEOs and business leaders** — a structured operating system for the hard decisions. Hypothesis tracking with WIP limits. Decision playbooks for pivots and hiring. Self-deception audits that flag when you're confusing activity with progress. A constraint-first approach that keeps you focused on what actually matters. Works whether you're pre-PMF or scaling.
 
-**Marketers** — 24 GTM skills covering positioning, content strategy, SEO, cold email, social writing, growth loops, and launch playbooks. Each skill is packed with frameworks from top practitioners (April Dunford, Jen Abel, and others). Use them as a second brain for marketing decisions — whether you're a one-person team or running a department.
+**Marketers** — 24 GTM skills covering positioning, content strategy, SEO, cold email, social writing, growth loops, and launch playbooks. Each skill has frameworks from practitioners like April Dunford and Jen Abel. Use them as a second brain for marketing decisions, whether you're a one-person team or running a department.
 
-**Anyone building with AI agents** — the skills are portable. Install them into Claude Code, Claude Cowork, Cursor, Codex, OpenClaw, or any of 40+ agents that support the skills format. They work standalone or as an integrated system. Claude Cowork users get these skills automatically — same `~/.claude/skills/` directory, no extra setup.
+**Anyone building with AI agents** — the skills are portable. Install them into Claude Code, Claude Cowork, Cursor, Codex, OpenClaw, or any of 40+ agents that support the skills format. They work standalone or as an integrated system. Claude Cowork users get these skills automatically (same `~/.claude/skills/` directory, no extra setup).
 
 ## Install
 
@@ -38,7 +38,7 @@ npx skills add CodeAlive-AI/ai-cofounder@founder-sales -g
 
 ### OpenClaw (full autonomous CEO OS)
 
-The skills work great in any agent, but with [OpenClaw](https://openclaw.ai) you unlock the full experience. The agent lives in your Telegram, WhatsApp, or Discord — it proactively sends you insights, runs daily recaps, tracks hypotheses across sessions, and nudges you when you're drifting from the constraint. It's not a tool you open — it's a Chief of Staff that works autonomously in the background.
+The skills work in any agent, but [OpenClaw](https://openclaw.ai) is where the full system comes alive. The agent lives in your Telegram, WhatsApp, or Discord. It sends you insights on its own, runs daily recaps, tracks hypotheses across sessions, and nudges you when you're drifting from the constraint. You don't open it. It just works in the background.
 
 ```bash
 git clone https://github.com/CodeAlive-AI/ai-cofounder.git
@@ -50,7 +50,7 @@ Then customize for your company — see [openclaw/CUSTOMIZATION.md](openclaw/CUS
 
 ## What is this?
 
-48 skills organized into a CEO operating system. Each skill is a structured workflow with frameworks from 100+ product leaders. They work standalone in any agent, but together they form an integrated system:
+48 skills organized into a CEO operating system. Each skill is a structured workflow with frameworks from 100+ product leaders. They work standalone, but together they form a system:
 
 - **Weekly CEO reviews** with self-deception checks
 - **Hypothesis tracking** with WIP limits and evidence tiers
@@ -59,9 +59,9 @@ Then customize for your company — see [openclaw/CUSTOMIZATION.md](openclaw/CUS
 - **GTM skills** covering positioning, sales, content, SEO, email, and launch
 - **Proactive nudges** via heartbeat — insights, coaching, and daily recaps (OpenClaw only)
 
-The system is opinionated: it follows a constraint-first approach (Theory of Constraints), uses evidence tiers to separate signal from noise, and constantly checks for founder self-deception patterns.
+The system is opinionated. It follows a constraint-first approach (Theory of Constraints), uses evidence tiers to separate signal from noise, and checks for self-deception patterns that founders usually don't notice on their own.
 
-## Repo Structure
+## Repo structure
 
 ```
 ai-cofounder/
@@ -162,9 +162,9 @@ ai-cofounder/
 
 </details>
 
-## Key Concepts
+## Key concepts
 
-### Evidence Tiers
+### Evidence tiers
 
 Not all signals are equal. The system uses 5 tiers to assess evidence quality:
 
@@ -174,19 +174,19 @@ Not all signals are equal. The system uses 5 tiers to assess evidence quality:
 4. **Tier 4**: Market narrative (competitor moves, content performance)
 5. **Tier 5**: Low-power (praise, vanity traffic, investor excitement)
 
-### Hypothesis Management
+### Hypothesis management
 
 Hypotheses follow the format: *"For [ICP] who [trigger], if we [change], then [metric] will move from X to Y by [date], because [evidence]."*
 
 WIP limits: max 3 active hypotheses, max 2 concurrent experiments. Relay race rule: if evidence is sufficient before the deadline — decide now.
 
-### Self-Deception Checks
+### Self-deception checks
 
 25 anti-patterns organized in 5 blocks: general founder mistakes, ex-engineer mistakes, metric interpretation, pre-PMF growth, and AI-era pitfalls. The agent flags these during weekly reviews and monthly audits.
 
-## OpenClaw Integration
+## OpenClaw integration
 
-The `openclaw/` directory provides a complete workspace that goes beyond individual skills:
+The `openclaw/` directory has the full workspace setup:
 
 - **SOUL.md** — AI Chief of Staff persona with constraint-first thinking
 - **MEMORY.md** — Structured company context (wedge, ICP, stage, constraint)
@@ -196,24 +196,24 @@ The `openclaw/` directory provides a complete workspace that goes beyond individ
 
 See [openclaw/README.md](openclaw/README.md) for setup instructions.
 
-## Works Great With CodeAlive
+## Works great with CodeAlive
 
-[CodeAlive](https://codealive.ai) is an AI context platform for codebases. It lets agents instantly get answers about how anything works in a repository — architecture, dependencies, cross-service patterns — without reading thousands of files. If your startup builds software, the [codealive-context-engine](https://github.com/CodeAlive-AI/codealive-skills) skill gives the CEO OS direct access to your codebase for deeper technical context during strategic reviews, investigations, and decision-making.
+[CodeAlive](https://codealive.ai) is an AI context platform for codebases. It lets agents instantly get answers about how anything works in a repository (architecture, dependencies, cross-service patterns) without reading thousands of files. If your startup builds software, the [codealive-context-engine](https://github.com/CodeAlive-AI/codealive-skills) skill gives the CEO OS direct access to your codebase for deeper technical context during strategic reviews and investigations.
 
-## Documentation
+## Docs
 
 - [openclaw/README.md](openclaw/README.md) — OpenClaw setup and deployment
 - [openclaw/CUSTOMIZATION.md](openclaw/CUSTOMIZATION.md) — Configure for your company
 - [docs/skill-catalog.md](docs/skill-catalog.md) — Detailed skill descriptions
 - [docs/adding-tools.md](docs/adding-tools.md) — Connect analytics, search, and browser tools
 
-## What's Inside the Skills
+## What's inside
 
 The CEO OS is built on five pillars:
 
 1. **[Lenny Rachitsky's Podcast](https://www.lennyspodcast.com/)** — 14 GTM skills distilled from 100+ episodes with top product leaders. Frameworks for positioning (April Dunford), founder sales (Jen Abel), growth loops, PMF measurement, and more. Packaged by [RefoundAI/lenny-skills](https://github.com/RefoundAI/lenny-skills) (MIT).
 
-2. **[Corey Haines' Marketing Skills](https://marketing-skills.com/)** — 8 skills for copywriting, cold email, SEO, content strategy, email sequences, and programmatic SEO. Battle-tested frameworks from a SaaS marketing practitioner. Source: [coreyhaines31/marketingskills](https://github.com/coreyhaines31/marketingskills) (MIT).
+2. **[Corey Haines' Marketing Skills](https://marketing-skills.com/)** — 8 skills for copywriting, cold email, SEO, content strategy, email sequences, and programmatic SEO. Practical frameworks from a SaaS marketer. Source: [coreyhaines31/marketingskills](https://github.com/coreyhaines31/marketingskills) (MIT).
 
 3. **[Garry Tan's gstack](https://github.com/garrytan/gstack)** — Inspired the strategic review modes (EXPAND / SELECTIVE / HOLD / REDUCE) and structured decision-making patterns.
 
