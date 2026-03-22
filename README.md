@@ -4,6 +4,8 @@
 
 **Your AI Chief of Staff for startup operations.** 48 skills that turn any AI agent into an augmented CEO: strategic reviews, hypothesis tracking, GTM playbooks, founder sales, and more.
 
+A compilation of frameworks and insights from [Lenny Rachitsky's Podcast](https://www.lennyspodcast.com/), [Corey Haines](https://marketing-skills.com/)' marketing playbooks, and [Garry Tan](https://github.com/garrytan/gstack) (Y Combinator CEO). Get April Dunford, Elena Verna, Jen Abel, Bob Moesta, Marty Cagan, and dozens of other industry experts on your team, distilled into structured AI skills.
+
 Built for founders who wear too many hats.
 
 ## Who is this for
