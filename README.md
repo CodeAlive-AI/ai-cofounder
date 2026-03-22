@@ -36,7 +36,7 @@ npx skills add CodeAlive-AI/ai-cofounder@decision-playbook -g
 npx skills add CodeAlive-AI/ai-cofounder@founder-sales -g
 ```
 
-> **No terminal?** Just tell your agent: *"Install skills from CodeAlive-AI/ai-cofounder following the README"* — it will handle the rest.
+> **No terminal?** Just tell your agent: *"Install skills from https://github.com/CodeAlive-AI/ai-cofounder following the README"*
 
 ### OpenClaw (full autonomous CEO OS)
 
