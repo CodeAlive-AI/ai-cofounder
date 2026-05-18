@@ -1,0 +1,413 @@
+#cloud-config
+# OpenClaw bootstrap for Yandex Cloud Kazakhstan VM (Ubuntu 24.04 LTS)
+#
+# The wizard in SKILL.md substitutes four placeholders before passing this
+# file to `yc compute instance create --metadata-from-file user-data=...`:
+#   {{SSH_PUBLIC_KEY}}     — single-line authorized_key for the openclaw user
+#   {{TELEGRAM_BOT_TOKEN}} — BotFather token
+#   {{LLM_ENV_LINE}}       — ONE of:
+#                              ANTHROPIC_API_KEY=sk-ant-...
+#                              OPENROUTER_API_KEY=sk-or-...
+#                              (empty string — for OpenAI Codex OAuth flow,
+#                               which the wizard runs via SSH after bootstrap)
+#   {{USER_LANGUAGE}}      — ISO 639-1 code of the user's language: `ru`, `en`,
+#                              `kk`, ... The bot will answer in this language
+#                              by default. Defaults to `ru` for the AI Camp
+#                              workshop audience.
+#
+# TELEGRAM_CHAT_ID is intentionally NOT a placeholder. The wizard auto-detects
+# it after the user presses /start in Telegram, then appends it to gateway.env
+# over SSH and restarts the adapter.
+#
+# Everything runs once on first boot. Progress is appended to
+# /var/log/openclaw-bootstrap.log and the marker /var/lib/openclaw-bootstrap-done
+# is written only when every step succeeds. The wizard polls for that marker.
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - ca-certificates
+  - gnupg
+  - git
+  - jq
+  - ufw
+  - fail2ban
+  - unattended-upgrades
+
+users:
+  - name: openclaw
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    groups: [users, sudo]
+    lock_passwd: true
+    ssh_authorized_keys:
+      - "{{SSH_PUBLIC_KEY}}"
+
+write_files:
+  # SSH hardening — drop-in (preserved across openssh-server upgrades).
+  # Based on CIS Ubuntu 24.04 Benchmark + Mozilla "Modern" OpenSSH guidelines.
+  # Items already off by default in OpenSSH 9.7+ (Protocol 1, RhostsAuth,
+  # KerberosAuth, GSSAPIAuth, HostbasedAuth, IgnoreRhosts) are not repeated.
+  - path: /etc/ssh/sshd_config.d/99-openclaw-hardening.conf
+    permissions: '0644'
+    content: |
+      # --- Authentication ---
+      PermitRootLogin no
+      PasswordAuthentication no
+      PubkeyAuthentication yes
+      AuthenticationMethods publickey
+      KbdInteractiveAuthentication no
+      PermitEmptyPasswords no
+      MaxAuthTries 4
+      LoginGraceTime 30
+      AllowUsers openclaw
+      # RSA keys below 3072 bit are no longer trusted in 2026.
+      RequiredRSASize 3072
+
+      # --- Session limits & timeouts ---
+      ClientAliveInterval 60
+      ClientAliveCountMax 3
+      MaxSessions 4
+      MaxStartups 10:30:60
+
+      # --- Forwarding / tunneling (defense in depth — none of these are
+      #     needed by OpenClaw, and turning them off limits blast-radius if
+      #     the SSH key ever leaks) ---
+      AllowTcpForwarding no
+      AllowAgentForwarding no
+      AllowStreamLocalForwarding no
+      GatewayPorts no
+      PermitTunnel no
+      X11Forwarding no
+      PermitUserEnvironment no
+      Compression no
+
+      # --- DNS & logging ---
+      UseDNS no
+      LogLevel VERBOSE
+
+      # --- Crypto (post-quantum first, then curve25519, then DH 16/18) ---
+      # Explicit lists protect against future OpenSSH builds that re-enable
+      # weak algos for compat. ssh-audit.com 2025 hardening profile.
+      KexAlgorithms sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group18-sha512,diffie-hellman-group16-sha512
+      Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr
+      MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com
+      HostKeyAlgorithms ssh-ed25519-cert-v01@openssh.com,ssh-ed25519,rsa-sha2-512-cert-v01@openssh.com,rsa-sha2-512,rsa-sha2-256-cert-v01@openssh.com,rsa-sha2-256
+
+  # fail2ban — escalating ban on SSH brute force.
+  # Reads sshd events from systemd journal (Ubuntu 24.04 default).
+  #
+  # Tuned for a single non-DevOps user: forgiving on first mistakes
+  # (5 retries before any ban, 1h initial bantime, 24h cap) but still
+  # blocks sustained brute force. The aggressive [recidive] jail is
+  # intentionally OFF — for a 1-user VM it's too easy to lock yourself
+  # out for a week with a misconfigured laptop.
+  - path: /etc/fail2ban/jail.local
+    permissions: '0644'
+    content: |
+      [DEFAULT]
+      backend  = systemd
+      bantime  = 1h
+      findtime = 10m
+      maxretry = 6
+      banaction = ufw
+      # Loopback/link-local always ignored. ufw + tight ingress means
+      # the user's own laptop IP is already the only allowed source.
+      ignoreself = true
+      ignoreip   = 127.0.0.1/8 ::1
+      # Recidivism: each repeat ban gets multiplied (2 × previous), capped at 24h.
+      # Cap is deliberately 24h, not 1w — recovery via serial console is
+      # painful for a non-DevOps user; we'd rather re-allow a noisy IP
+      # the next day than strand the founder over a long weekend.
+      bantime.increment = true
+      bantime.factor    = 2
+      bantime.maxtime   = 24h
+      bantime.rndtime   = 5m
+
+      [sshd]
+      enabled  = true
+      maxretry = 5
+
+  # Auto security updates with quiet daily reboots at 03:30 UTC.
+  # Allowed-Origins includes base codename because security patches often
+  # pull dependencies from there; without it dpkg can stall.
+  - path: /etc/apt/apt.conf.d/52openclaw-unattended.conf
+    permissions: '0644'
+    content: |
+      Unattended-Upgrade::Allowed-Origins {
+          "${distro_id}:${distro_codename}";
+          "${distro_id}:${distro_codename}-security";
+          "${distro_id}ESMApps:${distro_codename}-apps-security";
+          "${distro_id}ESM:${distro_codename}-infra-security";
+      };
+      Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+      Unattended-Upgrade::MinimalSteps "true";
+      Unattended-Upgrade::Automatic-Reboot "true";
+      Unattended-Upgrade::Automatic-Reboot-WithUsers "false";
+      Unattended-Upgrade::Automatic-Reboot-Time "03:30";
+      Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+      Unattended-Upgrade::Remove-Unused-Dependencies "true";
+      Unattended-Upgrade::SyslogEnable "true";
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::AutocleanInterval "7";
+
+  # Sudo I/O + audit logging — relevant because we use NOPASSWD: ALL.
+  # If the SSH key ever leaks, log_input/log_output preserves a forensic
+  # trail of what the attacker did before they could clean it up.
+  - path: /etc/sudoers.d/99-openclaw-logging
+    permissions: '0440'
+    owner: root:root
+    content: |
+      Defaults log_input, log_output
+      Defaults logfile="/var/log/sudo.log"
+      Defaults iolog_dir="/var/log/sudo-io"
+
+  # Locale packs — appended to ~/.openclaw/workspace/USER.md after
+  # ceo-ai-os/openclaw/install.sh runs, based on {{USER_LANGUAGE}}.
+  # The bot reads USER.md on session start and adopts the preference.
+  - path: /usr/local/share/openclaw-locale-ru.md
+    permissions: '0644'
+    content: |
+
+      ## Язык общения
+
+      Я говорю по-русски. **Всегда отвечай мне на русском**, естественным дружелюбным тоном — как если бы мы переписывались в мессенджере, а не в корпоративном чате.
+
+      Технические термины и идентификаторы (имена моделей вроде `claude-sonnet-4-6`, CLI-команды типа `openclaw doctor`, имена файлов, JSON-ключи) оставляй на английском — переводить их неестественно.
+
+      Если я сам напишу тебе на другом языке (английский, казахский, …) — отвечай на нём же, пока я не переключусь обратно на русский.
+
+  - path: /usr/local/share/openclaw-locale-kk.md
+    permissions: '0644'
+    content: |
+
+      ## Тіл
+
+      Мен қазақша сөйлеймін. Маған әрқашан қазақ тілінде жауап бер — табиғи, достық үнмен, мессенджердегі сияқты.
+
+      Техникалық терминдер мен идентификаторларды (модель аттары `claude-sonnet-4-6`, CLI-командалар `openclaw doctor`, файл аттары, JSON кілттері) ағылшын тілінде қалдыр.
+
+      Егер мен басқа тілде жазсам (орысша, ағылшынша), сол тілде жауап бер, мен қайтадан қазақшаға көшкенше.
+
+  # Credentials env-file — read by the gateway systemd unit. chmod 600 openclaw:openclaw.
+  # The wizard appends TELEGRAM_CHAT_ID=... at the end after auto-detecting it
+  # from getUpdates (Step 4 in SKILL.md). For openai-codex the LLM line is empty
+  # and the OAuth profile lives in ~/.openclaw/agents/main/agent/auth-profiles.json.
+  - path: /home/openclaw/.openclaw/gateway.env
+    owner: openclaw:openclaw
+    permissions: '0600'
+    defer: true
+    content: |
+      TELEGRAM_BOT_TOKEN={{TELEGRAM_BOT_TOKEN}}
+      {{LLM_ENV_LINE}}
+      PATH=/home/openclaw/.npm-global/bin:/usr/local/bin:/usr/bin:/bin
+      HOME=/home/openclaw
+
+  # systemd user-unit for the gateway
+  - path: /home/openclaw/.config/systemd/user/openclaw-gateway.service
+    owner: openclaw:openclaw
+    permissions: '0644'
+    defer: true
+    content: |
+      [Unit]
+      Description=OpenClaw Gateway
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=simple
+      EnvironmentFile=%h/.openclaw/gateway.env
+      ExecStart=%h/.npm-global/bin/openclaw gateway run
+      Restart=always
+      RestartSec=10
+      TimeoutStartSec=240
+      TimeoutStopSec=60
+
+      # Memory limits — gateway is Node.js, accumulates ~1.5G RSS over days
+      # on 4 GB VMs. MemoryMax + Restart=always = self-recovering.
+      MemoryAccounting=yes
+      MemoryHigh=1500M
+      MemoryMax=2500M
+
+      # systemd hardening (does not restrict the user-space Node features
+      # OpenClaw needs; safe defense-in-depth for a single-user CEO bot).
+      NoNewPrivileges=yes
+      PrivateTmp=yes
+      ProtectControlGroups=yes
+      ProtectKernelModules=yes
+      ProtectKernelTunables=yes
+      ProtectKernelLogs=yes
+      ProtectClock=yes
+      RestrictRealtime=yes
+      RestrictSUIDSGID=yes
+      LockPersonality=yes
+      RestrictNamespaces=yes
+
+      [Install]
+      WantedBy=default.target
+
+  # Main bootstrap script — runs as root from runcmd
+  - path: /usr/local/sbin/openclaw-bootstrap.sh
+    permissions: '0750'
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      LOG=/var/log/openclaw-bootstrap.log
+      exec > >(tee -a "$LOG") 2>&1
+      phase() { printf '\n===== %s | %s =====\n' "$(date -u +%FT%TZ)" "$*"; }
+      fail() { echo "ERROR: $*" >&2; exit 1; }
+
+      phase "1/8 Firewall + SSH hardening + auto-updates"
+      # ufw — default-deny ingress, allow everything out (OpenClaw needs
+      # to talk to many SaaS APIs). `limit` rate-caps SSH (6 conn / 30s)
+      # before traffic even reaches sshd — this is a strict superset of
+      # fail2ban's protection.
+      ufw --force reset
+      ufw default deny incoming
+      ufw default allow outgoing
+      ufw limit 22/tcp comment 'SSH (rate-limited)'
+      ufw logging low
+      ufw --force enable
+
+      # Validate the SSH drop-in before reloading sshd; a broken config
+      # would lock us out forever on a fresh VM.
+      sshd -t -f /etc/ssh/sshd_config || fail "sshd_config drop-in is invalid"
+      systemctl reload ssh
+
+      systemctl enable --now fail2ban
+      systemctl enable --now unattended-upgrades
+
+      # snapd is not installed on YC's Ubuntu 24.04 minimal cloud image, but
+      # purge defensively in case an upstream image change re-enables it.
+      # CVE-2026-3888 (LPE in snapd) means any local user → root if vulnerable
+      # snapd is present.
+      if dpkg -s snapd >/dev/null 2>&1; then
+        apt-get purge -y snapd
+      fi
+
+      # Ensure sudo I/O log directory exists with strict perms.
+      install -d -m 0750 -o root -g adm /var/log/sudo-io
+      touch /var/log/sudo.log && chmod 0640 /var/log/sudo.log && chown root:adm /var/log/sudo.log
+
+      phase "2/8 Node.js 22 LTS via NodeSource"
+      curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+      apt-get install -y nodejs
+      node --version
+      npm --version
+
+      phase "3/8 OpenClaw global install (as openclaw user)"
+      sudo -iu openclaw bash -lc '
+        set -euo pipefail
+        mkdir -p ~/.npm-global
+        npm config set prefix ~/.npm-global
+        grep -qxF "export PATH=\$HOME/.npm-global/bin:\$PATH" ~/.bashrc \
+          || echo "export PATH=\$HOME/.npm-global/bin:\$PATH" >> ~/.bashrc
+        export PATH=$HOME/.npm-global/bin:$PATH
+        npm install -g openclaw@latest
+        openclaw --version
+      '
+
+      phase "4/8 ceo-ai-os workspace (48 skills + bootstrap) + locale"
+      sudo -iu openclaw bash -lc '
+        set -euo pipefail
+        export PATH=$HOME/.npm-global/bin:$PATH
+        cd ~
+        if [ ! -d ceo-ai-os ]; then
+          git clone --depth 1 https://github.com/CodeAlive-AI/ceo-ai-os.git
+        fi
+        bash ceo-ai-os/openclaw/install.sh
+
+        # Locale override — ceo-ai-os USER.md/SOUL.md are in English.
+        # Append the locale pack BEFORE the gateway starts its first session,
+        # so the first reply already respects the language. Locale packs live
+        # at /usr/local/share/openclaw-locale-<lang>.md (written above).
+        LOCALE_PACK="/usr/local/share/openclaw-locale-{{USER_LANGUAGE}}.md"
+        if [ -f "$LOCALE_PACK" ]; then
+          cat "$LOCALE_PACK" >> ~/.openclaw/workspace/USER.md
+          echo "Locale applied: {{USER_LANGUAGE}}"
+        else
+          echo "Locale pack for {{USER_LANGUAGE}} not found — keeping ceo-ai-os English default"
+        fi
+      '
+
+      phase "5/8 OpenClaw config — Telegram + LLM provider"
+      sudo -iu openclaw bash -lc '
+        set -euo pipefail
+        export PATH=$HOME/.npm-global/bin:$PATH
+        # Source credentials so openclaw onboard/config see them
+        set -a; . ~/.openclaw/gateway.env; set +a
+
+        # Non-interactive scaffold (idempotent)
+        openclaw onboard --no-prompt || true
+
+        # Telegram channel
+        openclaw config set channels.telegram.enabled true
+        openclaw config set channels.telegram.botToken "$TELEGRAM_BOT_TOKEN"
+        openclaw config set channels.telegram.dmPolicy "pairing"
+
+        # LLM provider — auto-detected from whichever env var the wizard set.
+        # The unset case (no env var) is OpenAI Codex OAuth, handled post-boot
+        # by the wizard via `openclaw models auth login --provider openai-codex`.
+        if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+          openclaw config set agents.defaults.model.primary   "anthropic/claude-sonnet-4-6"
+          openclaw config set agents.defaults.model.fallbacks "[\"anthropic/claude-haiku-4-5\"]"
+          echo "Configured: Anthropic (claude-sonnet-4-6 primary)"
+        elif [ -n "${OPENROUTER_API_KEY:-}" ]; then
+          openclaw config set agents.defaults.model.primary   "openrouter/moonshotai/kimi-k2.6"
+          openclaw config set agents.defaults.model.fallbacks "[\"openrouter/openai/gpt-5.5\",\"openrouter/anthropic/claude-haiku-4-5\"]"
+          echo "Configured: OpenRouter (moonshotai/kimi-k2.6 primary)"
+        else
+          # OAuth flow case — leave primary unset, wizard will set it after
+          # `openclaw models auth login --provider openai-codex` completes
+          echo "Configured: no LLM env key — expecting OAuth login (openai-codex) from the wizard"
+        fi
+
+        # Gateway listens on loopback only — safe to disable token auth on a 1-user VM
+        openclaw config set gateway.auth.mode "none"
+
+        # Lower bootstrap budget — workshop bots don'\''t need 20 KB AGENTS.md
+        openclaw config set agents.defaults.bootstrapMaxChars 15000
+      '
+
+      phase "6/8 Enable + start gateway as a user service"
+      loginctl enable-linger openclaw
+      RUNTIME_DIR=/run/user/$(id -u openclaw)
+      sudo -iu openclaw bash -lc "
+        XDG_RUNTIME_DIR='$RUNTIME_DIR' systemctl --user daemon-reload
+        XDG_RUNTIME_DIR='$RUNTIME_DIR' systemctl --user enable --now openclaw-gateway
+      "
+
+      phase "7/8 Wait for /health 200 (up to 4 minutes)"
+      for i in $(seq 1 48); do
+        if curl -fsS -m 3 http://127.0.0.1:18789/health >/dev/null 2>&1; then
+          echo "Gateway healthy after ~$((i*5))s"
+          break
+        fi
+        sleep 5
+      done
+      curl -fsS -m 5 http://127.0.0.1:18789/health \
+        || fail "gateway did not become healthy in time — see journalctl --user -u openclaw-gateway"
+
+      phase "8/8 Finalize — secret scrub + ready marker"
+      # No welcome message here: TELEGRAM_CHAT_ID isn't known yet (the wizard
+      # auto-detects it via getUpdates after the user presses /start, in Step 4
+      # of SKILL.md), and the bot's dmPolicy is `pairing` until the wizard
+      # approves the chat.
+
+      # Scrub user-data left on disk by cloud-init (contains secrets)
+      shred -u /var/lib/cloud/instance/user-data.txt 2>/dev/null || \
+        rm -f /var/lib/cloud/instance/user-data.txt
+      shred -u /var/lib/cloud/instance/cloud-config.txt 2>/dev/null || \
+        rm -f /var/lib/cloud/instance/cloud-config.txt
+
+      touch /var/lib/openclaw-bootstrap-done
+      phase "DONE — OpenClaw is up."
+
+runcmd:
+  - [ /usr/local/sbin/openclaw-bootstrap.sh ]
+
+final_message: "OpenClaw bootstrap finished after $UPTIME. See /var/log/openclaw-bootstrap.log and /var/lib/openclaw-bootstrap-done."
