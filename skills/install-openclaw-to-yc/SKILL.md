@@ -19,10 +19,14 @@ description: >-
   YC account). The mode is auto-detected from the inputs. For local-machine
   OpenClaw install, use openclaw/install.sh in this repo instead. Companion
   skill openclaw-guide is required; prepare-yc-workshop is the matching
-  organizer-side skill that produces the bundles consumed in Plan B.
+  organizer-side skill that produces the bundles consumed in Plan B;
+  openclaw-user-onboarding is auto-invoked after Step 5 to collect the
+  five basic facts about the user (identity, focus, style, tools,
+  anti-patterns) and write them into USER.md so the bot is useful from
+  message one.
 license: MIT
 metadata:
-  version: 0.8.0
+  version: 0.9.0
 ---
 
 # Install OpenClaw to Yandex Cloud (Kazakhstan)
@@ -692,6 +696,38 @@ ssh openclaw@$IP "
 
 Then re-run the probe (5a + 5b). If the bot is still answering in the wrong language, surface to the user — don't loop.
 
+### Step 5.5 — Onboarding (hand off to `openclaw-user-onboarding` skill)
+
+The bot is alive but anonymous — it doesn't know who's talking to it. Before the final summary, hand off to `openclaw-user-onboarding`, which collects five basic fields about the user (identity, focus, communication style, tools, anti-patterns), writes `USER.md` on the VM, and resets the Telegram session so the bot picks up the profile from the very next message.
+
+Hand-off payload (everything the onboarding skill needs):
+
+| Variable | Source in this wizard |
+|---|---|
+| `IP` | Step 2e `external_ipv4_address` |
+| `CHAT_ID` | Step 4 (auto-detected from `getUpdates`) |
+| `BOT_TOKEN` | Step 1 (Telegram token the user pasted) |
+| `USER_LANGUAGE` | Step 0 (detected from user's first messages) |
+| `AGENT_TYPE` | `main` (this wizard always installs the main agent) |
+
+Trigger the skill with a single one-liner to the user, in their language:
+
+> Бот живой. Последний шаг — расскажи о себе коротко, чтобы я с первого сообщения был полезным.
+
+Then immediately invoke `openclaw-user-onboarding`. The onboarding skill takes over the conversation:
+
+1. Asks the five questions in one message
+2. Parses the user's free-form reply
+3. Renders `USER.md` from the template
+4. Shows a 15-line preview, asks for confirmation
+5. Atomic SCP upload to `~/.openclaw/workspace/USER.md` (mode 600, owned by `openclaw:openclaw`)
+6. Resets the active Telegram session (or restarts gateway as fallback)
+7. Returns control to this wizard
+
+If the user wants to skip onboarding entirely (says "пропусти", "skip", "потом"): write a minimal placeholder USER.md and proceed. **Don't block** — onboarding is a nice-to-have at this step, not a gate. The user can always run `openclaw-user-onboarding` standalone later.
+
+If `openclaw-user-onboarding` skill is not loaded (the agent doesn't have it installed): fall back to writing a minimal placeholder USER.md inline and mention in the final summary: "Чтобы дозаполнить профиль, поставь скилл openclaw-user-onboarding и скажи мне «онбординг»."
+
 #### Final hand-off message
 
 Only after all three checks pass, drop the summary:
@@ -718,8 +754,9 @@ LLM line variants:
 | openai-codex | `LLM          : OpenAI Codex / gpt-5.5 (ChatGPT Pro подписка)` or `gpt-4o (Plus подписка)` depending on what got resolved in Step 3.5 |
 
 Что дальше:
-  • Просто пиши боту в Telegram — он сам разберётся, какой скилл вызвать.
-  • Чтобы попробовать стратегические скиллы: «Сделай weekly review» или «Помоги принять решение об X».
+  • Просто пиши боту в Telegram — он уже знает кто ты, сразу пробуй: «что у меня сегодня важно?»
+  • Чтобы попробовать стратегические скиллы: «Сделай weekly review» или «Помоги принять решение об X»
+  • Обновить профиль (роль сменилась, новые приоритеты): скажи мне «обнови мой профиль для бота» — openclaw-user-onboarding перезапустится в standalone-режиме
   • Когда захочешь паузу (бот выключится, диск останется): yc compute instance stop --name openclaw-bot
   • Совсем удалить: yc compute instance delete --name openclaw-bot && yc vpc security-group delete --name openclaw-bot-sg
 
@@ -790,7 +827,15 @@ For everything else: dump `/var/log/openclaw-bootstrap.log` and `journalctl --us
 - `references/05-workshop-key-mode.md` — Plan B (workshop bundle) end-to-end: schema check, profile carve-out, what NOT to do, organizer hand-off
 - `scripts/cloud-init.yaml` — the full VM bootstrap (Node, OpenClaw, hardening, ceo-ai-os workspace, systemd user service)
 
-## Companion skill (required)
+## Companion skills
+
+| Skill | Required? | Role |
+|---|---|---|
+| `openclaw-guide` | **required** | Loaded by Step 0a; owns all post-install consultation (channels, use cases, debugging). |
+| `openclaw-user-onboarding` | recommended | Auto-invoked at Step 5.5 to collect five user facts and write USER.md. If missing, Step 5.5 falls back to a placeholder USER.md and surfaces "поставь openclaw-user-onboarding и скажи 'онбординг'" in the final summary. |
+| `prepare-yc-workshop` | organizer-only | Matching organizer-side skill that produces the bundle files consumed by this skill's Plan B. Participants don't need it. |
+
+### About `openclaw-guide` (required)
 
 `openclaw-guide` (sibling) — **must be installed alongside this one**. The wizard refuses to start without it loaded. Two reasons:
 

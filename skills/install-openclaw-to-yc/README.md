@@ -7,16 +7,17 @@ Works in two modes — auto-detected from the inputs:
 - **Plan A** — the user has (or is willing to create) their own YC Kazakhstan account. OAuth via `oauth.yandex.kz`, one prompt.
 - **Plan B** — the user is at a workshop and has a `bundle-NN.json` file from the organizer. No OAuth, no personal YC account needed. The bundle ships a per-participant service-account key + folder-id + cloud-id; the wizard uses it as a drop-in replacement for personal OAuth. See `references/05-workshop-key-mode.md`.
 
-**Always install together with `openclaw-guide`** — that skill is required at runtime and owns all post-install consulting (channels, use cases, debugging, CodeAlive integration). Organizers running a workshop also need `prepare-yc-workshop` (the companion organizer-side skill that produces the bundles consumed in Plan B).
+**Always install together with `openclaw-guide`** — that skill is required at runtime and owns all post-install consulting (channels, use cases, debugging, CodeAlive integration). Strongly recommended: also install **`openclaw-user-onboarding`** — auto-invoked at Step 5.5 to collect five basic facts about the user (identity, focus, communication style, tools, anti-patterns) and write them into USER.md, so the bot knows who's talking to it from the first message. Organizers running a workshop also need `prepare-yc-workshop` (the companion organizer-side skill that produces the bundles consumed in Plan B).
 
 ## Install
 
 ### Recommended — Skills CLI
 
 ```bash
-# Install this skill + its required companion
-npx skills add CodeAlive-AI/ceo-ai-os@install-openclaw-to-yc -g
-npx skills add CodeAlive-AI/ceo-ai-os@openclaw-guide -g
+# Install this skill + its required + recommended companions
+npx skills add CodeAlive-AI/ceo-ai-os@install-openclaw-to-yc   -g
+npx skills add CodeAlive-AI/ceo-ai-os@openclaw-guide           -g   # required
+npx skills add CodeAlive-AI/ceo-ai-os@openclaw-user-onboarding -g   # recommended (auto-invoked at Step 5.5)
 ```
 
 Then **restart your code agent** (Claude Code / Claude Cowork / Codex / Cursor / …) so it picks up the new skill.
