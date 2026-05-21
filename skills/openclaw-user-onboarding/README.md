@@ -82,7 +82,8 @@ openclaw-user-onboarding/
 
 ## Companion skills
 
-- **`install-openclaw-to-yc`** — triggers this skill automatically after Step 5
+- **`install-openclaw-to-yc`** — triggers this skill automatically after Step 5 (Yandex Cloud Kazakhstan path)
+- **`install-openclaw-to-hetzner`** — triggers this skill automatically after Step 5 (Hetzner Cloud path)
 - **`openclaw-guide`** — owns ongoing consultation after onboarding
 
 ## License

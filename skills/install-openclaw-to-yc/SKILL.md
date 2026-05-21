@@ -66,7 +66,8 @@ Trigger on: "install OpenClaw on Yandex Cloud", "set up my bot in YC Kazakhstan"
 
 Do NOT use this skill for:
 - Local-machine OpenClaw install → use `openclaw/install.sh` in this repo (the user runs it on their laptop)
-- AWS / GCP / Azure / other Yandex Cloud regions → this skill is hard-coded for Yandex Cloud Kazakhstan (kz1-a)
+- **Hetzner Cloud** → use `install-openclaw-to-hetzner` (sibling skill, same shape, different CLI)
+- AWS / GCP / Azure / other Yandex Cloud regions → this skill is hard-coded for Yandex Cloud Kazakhstan (kz1-a); no sibling skills exist yet for those clouds
 - Adding a second agent or a second bot to an existing OpenClaw VM → out of scope
 - Preparing the workshop *as an organizer* (creating N folders + keys for participants) → use `prepare-yc-workshop` (the matching organizer-side skill) — this skill is for the *participant*
 
@@ -834,6 +835,7 @@ For everything else: dump `/var/log/openclaw-bootstrap.log` and `journalctl --us
 | `openclaw-guide` | **required** | Loaded by Step 0a; owns all post-install consultation (channels, use cases, debugging). |
 | `openclaw-user-onboarding` | recommended | Auto-invoked at Step 5.5 to collect five user facts and write USER.md. If missing, Step 5.5 falls back to a placeholder USER.md and surfaces "поставь openclaw-user-onboarding и скажи 'онбординг'" in the final summary. |
 | `prepare-yc-workshop` | organizer-only | Matching organizer-side skill that produces the bundle files consumed by this skill's Plan B. Participants don't need it. |
+| `install-openclaw-to-hetzner` | alternative | Sibling skill for Hetzner Cloud (Falkenstein, Germany). Pick by target cloud — they don't co-exist on one VM. Hetzner is single-mode (Plan A only) — no workshop-bundle equivalent. |
 
 ### About `openclaw-guide` (required)
 
