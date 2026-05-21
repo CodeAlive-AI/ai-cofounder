@@ -13,11 +13,16 @@ description: >-
   set up my CEO bot in YC KZ, I am at OpenClaw workshop and need my own bot,
   create a Yandex Cloud VM for OpenClaw, or any close paraphrase. Targets a
   ~15-minute end-to-end run for non-DevOps users (founders, CEOs, marketing
-  leads). For local-machine OpenClaw install, use openclaw/install.sh in this
-  repo instead. Companion skill openclaw-guide is required.
+  leads). Supports two modes of accessing Yandex Cloud — Plan A (the user's
+  own YC Kazakhstan account via OAuth) and Plan B (a workshop-key bundle
+  provided by the workshop organizer, for participants without their own
+  YC account). The mode is auto-detected from the inputs. For local-machine
+  OpenClaw install, use openclaw/install.sh in this repo instead. Companion
+  skill openclaw-guide is required; prepare-yc-workshop is the matching
+  organizer-side skill that produces the bundles consumed in Plan B.
 license: MIT
 metadata:
-  version: 0.7.0
+  version: 0.8.0
 ---
 
 # Install OpenClaw to Yandex Cloud (Kazakhstan)
@@ -53,12 +58,32 @@ If you catch yourself drafting a question outside the two allowed inputs, re-rea
 
 ## When to invoke
 
-Trigger on: "install OpenClaw on Yandex Cloud", "set up my bot in YC Kazakhstan", "OpenClaw workshop workshop", "deploy OpenClaw remotely", "поставь себе openclaw", "разверни мне бота в Yandex Cloud", and close paraphrases.
+Trigger on: "install OpenClaw on Yandex Cloud", "set up my bot in YC Kazakhstan", "OpenClaw workshop workshop", "deploy OpenClaw remotely", "поставь себе openclaw", "разверни мне бота в Yandex Cloud", "у меня workshop-ключ", "вот bundle от организатора", and close paraphrases.
 
 Do NOT use this skill for:
 - Local-machine OpenClaw install → use `openclaw/install.sh` in this repo (the user runs it on their laptop)
 - AWS / GCP / Azure / other Yandex Cloud regions → this skill is hard-coded for Yandex Cloud Kazakhstan (kz1-a)
 - Adding a second agent or a second bot to an existing OpenClaw VM → out of scope
+- Preparing the workshop *as an organizer* (creating N folders + keys for participants) → use `prepare-yc-workshop` (the matching organizer-side skill) — this skill is for the *participant*
+
+## Two access modes (Plan A and Plan B)
+
+This skill works in two modes — picked silently at Step 0 from what the user has on hand. The user is shown the choice **only once** in Step 1; after that, both branches converge and the rest of the wizard is identical.
+
+| Mode | When | What the user supplies | Skill does |
+|---|---|---|---|
+| **Plan A — own YC account** (default) | The user has (or is willing to create) a Yandex Cloud Kazakhstan account. | OAuth token from `oauth.yandex.kz` (asked once in Step 0d). | `yc init`-equivalent on a wizard-owned profile + own cloud-id/folder-id. |
+| **Plan B — workshop bundle** | The user is at a workshop, the organizer DM'd them a `bundle-NN.json` file, and they don't want / don't have time to set up their own YC. | Path to the `bundle-NN.json` file the organizer sent them. | Parses the bundle, configures `yc` with the embedded service-account key + cloud-id + folder-id. No OAuth, no personal YC account needed. |
+
+Plan B is recognised by detecting a workshop bundle file in any of these ways (auto-detected in Step 0.5 below):
+
+1. The user pasted a file path that resolves to a JSON whose `$schema` starts with `openclaw-workshop-bundle@`.
+2. The user said one of: "у меня workshop-ключ", "вот bundle от организатора", "I have a workshop key", "organizer gave me a key file", "у меня нет своего Yandex Cloud, есть только ключ от воркшопа".
+3. A file matching `bundle-*.json` is present in the user's current working directory or `~/Downloads` (offered with a one-line confirmation).
+
+If none match, the wizard defaults to Plan A.
+
+After Step 0.5 the two branches converge — Steps 1, 2, 3, 4, 5 are identical regardless of mode. Plan A and Plan B both end with a working YC profile pointing at one folder; everything downstream just uses that.
 
 ## Inputs (the only two questions you ask)
 
@@ -118,9 +143,77 @@ Run in order. Each block has a silent auto-fix path; only fall through to a user
 - The KZ endpoint exposes a **smaller command set**: `iam`, `quota-manager`, `resource-manager`, `compute`, `vpc`, `dns`, `managed-kubernetes`. **`yc billing` does NOT exist on the KZ endpoint.** Calling `yc billing account list` always errors out — don't use it for any check.
 - Use **named profiles** (`yc config profile create/activate`) instead of editing the active config. The user almost certainly already has profiles for their other clouds — don't clobber them.
 
+**Step 0.5 — Detect mode (Plan A vs Plan B).** Runs **first**, before anything else in Step 0.
+
+Plan B short-circuits steps c, d, e (profile, OAuth, cloud-id/folder-id resolution) because the bundle already has all of that baked in. Plan A keeps them.
+
+Detection order:
+
+1. **Explicit file path** in what the user said. Resolve the path; if it's a readable JSON whose `$schema` field starts with `openclaw-workshop-bundle@`, set `MODE=plan-b` and `BUNDLE_PATH=<path>`.
+2. **Phrase match.** If the user wrote any of these (or close paraphrase) in the activation message:
+   - "У меня workshop-ключ" / "вот bundle от организатора" / "ключ от воркшопа"
+   - "I have a workshop key" / "organizer gave me a key file"
+   - "Bundle from the organizer is here:" → followed by path
+   - Then ask **one** clarifier: "Где лежит файл `bundle-NN.json` от организатора? (можешь перетащить файл в чат, или просто путь)" — accept the path, validate the `$schema`, set `MODE=plan-b`.
+3. **Auto-discovery.** Glob `bundle-*.json` in `$PWD`, `~/Downloads`, `~/Desktop`. If exactly one match whose `$schema` starts with `openclaw-workshop-bundle@`, ask once: "Нашёл workshop-ключ `bundle-NN.json` в `<path>`. Это от организатора? (да / нет)". On "да" → `MODE=plan-b`. On "нет" → continue to next step.
+4. **Default.** No bundle detected → `MODE=plan-a`. Don't ask "do you have a workshop key?" upfront — that's friction for the >50% of users who have their own YC and would treat the question as noise.
+
+Schema sanity check on the bundle file:
+
+```bash
+SCHEMA=$(jq -r '."$schema" // empty' "$BUNDLE_PATH" 2>/dev/null)
+[[ "$SCHEMA" =~ ^openclaw-workshop-bundle@ ]] \
+  || { say "Это не похоже на workshop-bundle от организатора. Проверь, что прислали правильный файл."; stop; }
+
+# Required fields
+for f in cloud_id folder_id zone endpoint key; do
+  jq -er ".${f}" "$BUNDLE_PATH" >/dev/null \
+    || { say "В bundle не хватает поля ${f}. Попроси у организатора новый файл."; stop; }
+done
+```
+
+On any validation failure for Plan B, tell the user in one sentence what's wrong, advise asking the organizer, and stop — don't silently fall back to Plan A. Falling back would burn 10 minutes asking for OAuth they don't have.
+
+**If `MODE=plan-b`**: configure `yc` from the bundle and skip directly to Step 0a, then `f`, then `g` (skipping `c`, `d`, `e`):
+
+```bash
+# Wizard-owned profile so we don't disturb the user's other yc setups
+yc config profile create openclaw-workshop 2>/dev/null || true
+yc config profile activate openclaw-workshop
+
+# Carve the SA key into the shape `yc config set service-account-key` expects
+KEY_FILE="$(mktemp -t openclaw-sa-key.XXXXXX.json)"
+jq '.key' "$BUNDLE_PATH" > "$KEY_FILE"
+chmod 600 "$KEY_FILE"
+
+yc config set service-account-key "$KEY_FILE"
+yc config set endpoint            "$(jq -r '.endpoint'  "$BUNDLE_PATH")"
+yc config set cloud-id            "$(jq -r '.cloud_id'  "$BUNDLE_PATH")"
+yc config set folder-id           "$(jq -r '.folder_id' "$BUNDLE_PATH")"
+yc config set compute-default-zone "$(jq -r '.zone'      "$BUNDLE_PATH")"
+
+# Verify it actually works — one read call against the configured folder
+yc compute zone list --format json | jq -e '.[] | select(.id=="kz1-a")' >/dev/null \
+  || { say "Ключ от организатора не работает (или истёк). Напиши организатору: попроси новый bundle."; stop; }
+```
+
+Plan-B-specific failure modes:
+- **Schema older than `@1`** → bundle predates this version of the skill. Ask user to refresh from organizer; don't try to be smart.
+- **Schema newer than what this skill recognises** → also ask for guidance from organizer (they updated `prepare-yc-workshop` past us). Bundle may still work — try the steps above and surface YC errors plainly.
+- **`yc compute zone list` returns empty** → key was revoked or folder deleted. Tell the user: "Кажется, организатор уже свернул облако воркшопа. Свяжись с ним."
+- **`yc compute zone list` returns `ru-central1-*`** instead of `kz1-a` → bundle's `endpoint` field was wrong. Surface plainly; this is an organizer-side bug.
+
+**On `MODE=plan-b`, skip Step 0c, 0d, 0e entirely** and proceed to 0a → 0b → 0f → 0g. The bundle already contains a valid token-equivalent + cloud-id + folder-id, so re-asking for OAuth would be cruel and pointless.
+
+**On `MODE=plan-a`, proceed normally** through Step 0a-g as written.
+
+---
+
 **a. Companion skill `openclaw-guide` must be loaded.** Probe the agent's skill loader. If it's not present, run `npx skills add CodeAlive-AI/ceo-ai-os@openclaw-guide -g` silently. If `npx` is unavailable, tell the user (one sentence) to install both skills manually, then stop.
 
 **b. `yc` CLI installed.** `yc --version`. If missing: silently `curl -fsSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash -s -- -i $HOME/yandex-cloud -n` and add `~/yandex-cloud/bin` to PATH for this session.
+
+**(c, d, e are Plan A only — skip on `MODE=plan-b`, which configured the profile from the bundle in Step 0.5.)**
 
 **c. Activate a dedicated Kazakhstan profile.** Use a wizard-owned profile so we don't disturb the user's existing setup:
 
@@ -643,6 +736,9 @@ These are the things the wizard fixes on its own if it sees them during the run.
 |---|---|
 | `yc` CLI missing | Install to `$HOME/yandex-cloud/bin`, add to PATH for this session. |
 | Active `yc` profile points at RU but user has a KZ cloud | Create/activate a dedicated `openclaw-kz` profile, set token + endpoint + cloud-id + folder-id. Don't touch the user's existing profiles. |
+| User opens with "у меня workshop-ключ" but no bundle path | Ask once: "Где лежит файл? Можешь перетащить в чат". Then validate `$schema`. Don't auto-fall-back to Plan A — the user already told us they have a key, asking for OAuth would be wrong. |
+| Plan B bundle has `$schema` newer than `openclaw-workshop-bundle@1` | Warn once: "Bundle от организатора новее, чем я умею. Попробую как есть." Try the standard Plan B steps. Surface any `yc` error plainly. |
+| Plan B `yc compute zone list` returns empty (key revoked / folder gone) | Tell the user: "Кажется, организатор свернул облако. Напиши ему." Don't retry. |
 | Endpoint set to KZ but cloud-id/folder-id are empty or RU-flavoured | Re-resolve via `yc resource-manager cloud list` / `folder list` on the active profile, then `yc config set`. |
 | Multiple clouds returned by `cloud list` | Use the first; tell the user one line "использую облако `<NAME>`". |
 | `yc vpc network get --name default` returns nothing | Create the default network silently, then create `default-kz1-a` subnet with range `10.130.0.0/24`. |
@@ -691,6 +787,7 @@ For everything else: dump `/var/log/openclaw-bootstrap.log` and `journalctl --us
 - `references/02-network-and-security.md` — security-group rules, public-IP rationale, hardening choices
 - `references/03-openclaw-config.md` — Telegram pairing flow, Anthropic auth, workspace seeding
 - `references/04-troubleshooting.md` — 7 failure modes with copy-paste fixes
+- `references/05-workshop-key-mode.md` — Plan B (workshop bundle) end-to-end: schema check, profile carve-out, what NOT to do, organizer hand-off
 - `scripts/cloud-init.yaml` — the full VM bootstrap (Node, OpenClaw, hardening, ceo-ai-os workspace, systemd user service)
 
 ## Companion skill (required)

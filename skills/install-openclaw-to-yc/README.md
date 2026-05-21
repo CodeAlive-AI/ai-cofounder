@@ -2,7 +2,12 @@
 
 Wizard skill that takes a non-DevOps user from zero to a working OpenClaw bot on a fresh Yandex Cloud Kazakhstan VM (zone `kz1-a`, Karaganda) in ~15 minutes. Asks for a Telegram bot token and one of three LLM access options (Anthropic key, OpenRouter key, or OpenAI Codex OAuth via ChatGPT Plus/Pro), then creates the VM, hardens it, installs OpenClaw with the CEO AI OS workspace, wires Telegram, auto-detects `chat_id`, configures the bot to reply in the user's language, and verifies the bot answers.
 
-**Always install together with `openclaw-guide`** — that skill is required at runtime and owns all post-install consulting (channels, use cases, debugging, CodeAlive integration).
+Works in two modes — auto-detected from the inputs:
+
+- **Plan A** — the user has (or is willing to create) their own YC Kazakhstan account. OAuth via `oauth.yandex.kz`, one prompt.
+- **Plan B** — the user is at a workshop and has a `bundle-NN.json` file from the organizer. No OAuth, no personal YC account needed. The bundle ships a per-participant service-account key + folder-id + cloud-id; the wizard uses it as a drop-in replacement for personal OAuth. See `references/05-workshop-key-mode.md`.
+
+**Always install together with `openclaw-guide`** — that skill is required at runtime and owns all post-install consulting (channels, use cases, debugging, CodeAlive integration). Organizers running a workshop also need `prepare-yc-workshop` (the companion organizer-side skill that produces the bundles consumed in Plan B).
 
 ## Install
 
@@ -55,14 +60,17 @@ After install, type any of these to your agent:
 - "install OpenClaw to Yandex Cloud Kazakhstan"
 - "set up my CEO bot in YC KZ"
 - "I'm at OpenClaw workshop and need my own OpenClaw bot"
+- "у меня workshop-ключ от организатора, вот файл `./bundle-07.json`"  *(Plan B)*
 
-The skill takes over from there. It asks for **two** things in one message — Telegram bot token + LLM access — then runs everything itself.
+The skill takes over from there. It asks for **two** things in one message — Telegram bot token + LLM access — then runs everything itself. If you mention a workshop bundle, it switches to Plan B automatically and skips the OAuth step.
 
 ## What you need before running it
 
 1. **`yc` CLI** — the skill installs it silently if missing.
-2. **Yandex Cloud account with the Kazakhstan endpoint** (`api.yandexcloud.kz:443`). The skill activates a dedicated `openclaw-kz` profile and asks for the OAuth token once if you've never used the KZ realm.
-3. **Active billing account** in Yandex Cloud Kazakhstan (24 000 ₸ trial grant for 60 days covers ~8 months of run).
+2. **One of two:**
+   - **Plan A:** **Yandex Cloud account with the Kazakhstan endpoint** (`api.yandexcloud.kz:443`). The skill activates a dedicated `openclaw-kz` profile and asks for the OAuth token once if you've never used the KZ realm.
+   - **Plan B:** **A `bundle-NN.json` from the workshop organizer.** No personal YC account needed. The bundle contains a service-account key + folder-id + cloud-id. Tell the agent where the file is; the wizard does the rest. Note: your VM will live in the **organizer's** cloud and disappear when they clean up after the workshop — for a permanent bot, switch to Plan A after the workshop.
+3. **Active billing account** in Yandex Cloud Kazakhstan (24 000 ₸ trial grant for 60 days covers ~8 months of run). Plan B participants don't need their own — they ride on the organizer's billing.
 4. **Telegram bot token** from [@BotFather](https://t.me/BotFather). The wizard auto-detects `chat_id` after you press `/start` — you do **not** need to look it up via `@userinfobot`.
 5. **LLM access — pick one:**
    - **A.** [Anthropic API key](https://console.anthropic.com/settings/keys) starting with `sk-ant-` + ≥$5 credit (recommended for first-time users; best raw quality)
@@ -91,10 +99,11 @@ install-openclaw-to-yc/
 ├── scripts/
 │   └── cloud-init.yaml                   # VM bootstrap (Node 22, OpenClaw, hardening, ceo-ai-os workspace, systemd)
 └── references/
-    ├── 01-prerequisites.md               # yc CLI for KZ endpoint, named profiles, SSH, OAuth
+    ├── 01-prerequisites.md               # yc CLI for KZ endpoint, named profiles, SSH, OAuth (Plan A)
     ├── 02-network-and-security.md        # SG rules, public-IP vs NAT, hardening rationale, lockout recovery
     ├── 03-openclaw-config.md             # Telegram pairing, all three LLM providers, workspace seeding
-    └── 04-troubleshooting.md             # 7 failure modes with copy-paste fixes
+    ├── 04-troubleshooting.md             # 7 failure modes with copy-paste fixes
+    └── 05-workshop-key-mode.md           # Plan B — bundle schema, profile carve-out, organizer hand-off
 ```
 
 Channels other than Telegram, use cases (morning brief / research / competitive / decision), and CodeAlive integration are documented in the companion `openclaw-guide` skill — not here. This skill is install-only.
