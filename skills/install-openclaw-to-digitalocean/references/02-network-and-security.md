@@ -1,6 +1,6 @@
 # Network & security choices (and the "dangerous install" threat model)
 
-This skill defaults to **public IPv4 + tight SSH ingress (Cloud Firewall) + outbound-anywhere + host-level ufw/fail2ban**. It's the simplest model that survives a single non-DevOps user on a laptop that roams between networks.
+This skill defaults to **public IPv4 + SSH open to all (Cloud Firewall, key-only auth) + outbound-anywhere + host-level ufw/fail2ban**. SSH is intentionally NOT locked to a single IP — users and the automation AI agent that manages the box connect from dynamic IPs and must never be IP-banned or rate-limited (see "Why SSH is open to all" below). The security control is key-only auth + fail2ban, neither of which depends on the source IP.
 
 Read the first section even if you skip the rest — it's the honest accounting of why an OpenClaw install is a "dangerous" thing to stand up, and what this wizard does and doesn't fix.
 
@@ -11,7 +11,7 @@ OpenClaw is not a sandboxed SaaS. On the box it runs on, it is effectively a rem
 | Risk | Reality | What we do about it |
 |---|---|---|
 | **Full shell access** | The gateway runs an LLM that can execute arbitrary commands (that's the point — it's an agent). A prompt-injection or a confused-deputy moment can run anything the `openclaw` user can run. | Dedicated non-root `openclaw` user; systemd sandboxing (`NoNewPrivileges`, `ProtectKernel*`, `RestrictNamespaces`); the box holds nothing but the bot. |
-| **Plaintext credentials** | Provider API keys and the Telegram token sit in `~/.openclaw/gateway.env` (mode 600) and `auth-profiles.json`. Anyone who gets the SSH key or root can read them. | Tight SSH ingress, key-only auth, ufw + fail2ban, sudo I/O logging for forensics. Keys are scoped/cheap to rotate (a $5 Anthropic key, a revocable bot token). |
+| **Plaintext credentials** | Provider API keys and the Telegram token sit in `~/.openclaw/gateway.env` (mode 600) and `auth-profiles.json`. Anyone who gets the SSH key or root can read them. | Key-only auth (the SSH key is the only way in), ufw + fail2ban, sudo I/O logging for forensics. Keys are scoped/cheap to rotate (a $5 Anthropic key, a revocable bot token). |
 | **Bootstrap secrets in metadata** | DO keeps the rendered cloud-init (with the injected secrets) at `169.254.169.254/metadata/v1/user-data` for the Droplet's life. No API wipes it. | We scrub the on-disk copy; we treat the Droplet as single-tenant and tell the user not to add other users. |
 | **Standing cloud token** | The DO API token can create/destroy across the account. | Use a **scoped, named, expiring** token (`openclaw`, 90 days); the running bot never uses it — only provisioning/teardown does. Revoke it after setup if you won't manage via CLI for a while. |
 | **Outbound to anywhere** | The bot can reach any internet host (needed for LLM + Telegram + tools). Data exfil is possible if the agent is subverted. | Accepted trade-off for a personal CEO bot. Egress lockdown by domain is fragile (see §Outbound). |
@@ -40,6 +40,27 @@ The security model therefore rests on two controls that don't care about source 
 
 A user who *does* want to restrict access by IP/CIDR can edit the firewall (replace the `0.0.0.0/0,::/0` inbound rule with their `<CIDR>`), but the default is open — and an IP-locked firewall is incompatible with running the automation agent from a dynamic IP.
 
+### Running the controlling agent over SSH (avoid self-inflicted bans)
+
+The wizard removes the server-side throttles (`ufw allow` not `limit`, `MaxStartups 100:30:200`, `MaxSessions 50`, `MaxAuthTries 10`, fail2ban pinned to `mode = normal`). To stay clean from the **client** side, the agent making frequent SSH calls should:
+
+- **Pin the identity:** `ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 openclaw@$IP …`. Without `IdentitiesOnly`, ssh offers every key in your agent/keyring first; on a machine with many keys those probes can still rack up auth attempts (the reason `MaxAuthTries` was raised to 10). `IdentitiesOnly` makes ssh present only the one correct key, so auth succeeds on the first try and fail2ban never sees a failure.
+- **Reuse the connection (optional but ideal for a busy agent):** multiplex many commands over one TCP connection instead of a fresh handshake each time —
+  ```
+  # ~/.ssh/config
+  Host openclaw-bot
+      HostName <IP>
+      User openclaw
+      IdentityFile ~/.ssh/id_ed25519
+      IdentitiesOnly yes
+      ControlMaster auto
+      ControlPath ~/.ssh/cm-%r@%h:%p
+      ControlPersist 10m
+  ```
+  This collapses dozens of `ssh openclaw-bot 'cmd'` calls into sessions on a single connection (which is exactly why `MaxSessions` is 50), eliminating handshake churn entirely.
+
+With key-only auth + `mode = normal` fail2ban, an authenticated agent is never banned even without these client tweaks — they're defense-in-depth and a latency win, not a requirement.
+
 ## Two firewalls, on purpose
 
 | Layer | Where | What it does |
@@ -55,7 +76,7 @@ DigitalOcean's stock Ubuntu 24.04 image enables root SSH login and ships `snapd`
 
 ### 1. SSH (drop-in `/etc/ssh/sshd_config.d/99-openclaw-hardening.conf`)
 
-Validated with `sshd -t` **before** reload (a bad config would lock us out of a fresh Droplet). Key changes: `PermitRootLogin no` (DO's image leaves it on), `PasswordAuthentication no`, `AllowUsers openclaw`, `MaxAuthTries 4`, all forwarding off, post-quantum-first KEX, ETM-only MACs, `RequiredRSASize 3072`. See the YC skill's `02-network-and-security.md` §1 for the per-directive table — it applies verbatim.
+Validated with `sshd -t` **before** reload (a bad config would lock us out of a fresh Droplet). Key changes: `PermitRootLogin no` (DO's image leaves it on), `PasswordAuthentication no`, `AllowUsers openclaw`, `MaxAuthTries 10` (raised so a multi-key automation agent doesn't exhaust auth attempts), all forwarding off, post-quantum-first KEX, ETM-only MACs, `RequiredRSASize 3072`. See the YC skill's `02-network-and-security.md` §1 for the per-directive table — it applies verbatim.
 
 ### 2. ufw
 

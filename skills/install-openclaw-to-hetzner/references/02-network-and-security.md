@@ -1,6 +1,6 @@
 # Network & security choices
 
-This skill defaults to **public IPv4 + IPv6 + tight SSH ingress + outbound-anywhere** because it's the simplest model that survives a single non-DevOps user, a workshop room with shared Wi-Fi, and three follow-up days from a hotel.
+This skill defaults to **public IPv4 + IPv6 + SSH open to all (key-only auth) + outbound-anywhere**. SSH is intentionally NOT locked to a single IP — users and the automation AI agent that manages the box connect from dynamic IPs and must never be IP-banned or rate-limited (see "Why SSH is open to all" below). The security control is key-only auth + fail2ban, neither of which depends on the source IP.
 
 Read this only if the user asks "why this and not …" or if you need to tighten the rules.
 
@@ -64,6 +64,15 @@ hcloud firewall add-rule openclaw-bot-fw \
 
 But note: doing this re-introduces the dynamic-IP lockout risk and can throttle an automation agent. The default open posture is recommended.
 
+### Running the controlling agent over SSH (avoid self-inflicted bans)
+
+The wizard removes the server-side throttles (`ufw allow` not `limit`, `MaxStartups 100:30:200`, `MaxSessions 50`, `MaxAuthTries 10`, fail2ban pinned to `mode = normal`). To stay clean from the **client** side, the agent making frequent SSH calls should:
+
+- **Pin the identity:** `ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 openclaw@$IP …`. Without `IdentitiesOnly`, ssh offers every key in your agent/keyring first; on a machine with many keys those probes can rack up auth attempts (the reason `MaxAuthTries` was raised to 10). `IdentitiesOnly` makes ssh present only the one correct key, so auth succeeds on the first try and fail2ban never sees a failure.
+- **Reuse the connection (optional but ideal for a busy agent):** multiplex many commands over one TCP connection via `ControlMaster auto` / `ControlPersist 10m` in `~/.ssh/config` (this is why `MaxSessions` is 50), eliminating handshake churn entirely.
+
+With key-only auth + `mode = normal` fail2ban, an authenticated agent is never banned even without these client tweaks — they're defense-in-depth and a latency win, not a requirement.
+
 ## What `cloud-init.yaml` hardens on top of Hetzner defaults
 
 Hetzner's Ubuntu 24.04 image is the upstream Canonical cloud image. It's reasonable but plain. The cloud-init layers on a CIS-aligned, Mozilla "Modern" OpenSSH baseline.
@@ -79,7 +88,7 @@ Validated before `systemctl reload ssh` (a bad config would lock us out forever 
 | `KbdInteractiveAuthentication` | `no` | Belt and suspenders. |
 | `PubkeyAuthentication` | `yes` | The only allowed factor. |
 | `PermitEmptyPasswords` | `no` | Default, but explicit for audit clarity. |
-| `MaxAuthTries` | `4` | Disconnect on the 5th try. Tuned up from CIS's `3` because non-DevOps users frequently mistype the key passphrase 2–3 times on first connect. |
+| `MaxAuthTries` | `10` | Raised from CIS's `3–4`: a controlling automation agent may offer several SSH identities from its agent/keyring before the right key — a low cap exhausts into "Too many authentication failures", which also trips fail2ban and bans the agent. Key-only auth keeps a higher value safe. (The agent should still use `-o IdentitiesOnly=yes`.) |
 | `LoginGraceTime` | `30` | Drop slow / scanning connections fast. |
 | `AllowUsers` | `openclaw` | Only one user can log in. |
 | `MaxSessions` | `50` | Raised well above defaults so a high-frequency automation agent opening many concurrent SSH sessions is never throttled. |

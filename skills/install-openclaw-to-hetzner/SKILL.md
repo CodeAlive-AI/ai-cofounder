@@ -25,7 +25,7 @@ description: >-
   useful from message one.
 license: MIT
 metadata:
-  version: 0.1.1
+  version: 0.1.2
 ---
 
 # Install OpenClaw to Hetzner Cloud

@@ -69,7 +69,13 @@ write_files:
       AuthenticationMethods publickey
       KbdInteractiveAuthentication no
       PermitEmptyPasswords no
-      MaxAuthTries 4
+      # Raised from CIS's 4: a controlling automation agent may present several
+      # SSH identities from its ssh-agent/keyring before offering the right key.
+      # With MaxAuthTries 4 those probes exhaust into "Too many authentication
+      # failures" — which also registers as a fail2ban failure and bans the
+      # agent. Key-only auth keeps a higher value safe. (Belt-and-suspenders:
+      # the controlling agent should also use `-o IdentitiesOnly=yes -i <key>`.)
+      MaxAuthTries 10
       LoginGraceTime 30
       AllowUsers openclaw
       # RSA keys below 3072 bit are no longer trusted in 2026.
@@ -150,6 +156,12 @@ write_files:
       [sshd]
       enabled  = true
       maxretry = 5
+      # Pin the filter to "normal" so ONLY genuine failed authentications count.
+      # The aggressive/ddos modes also count pre-auth "Connection closed
+      # [preauth]" churn — which a high-frequency automation agent produces in
+      # bulk — and would ban it despite valid keys. Pinning protects against a
+      # future distro/fail2ban default drifting away from "normal".
+      mode     = normal
 
   # Auto security updates with quiet daily reboots at 03:30 UTC.
   # Allowed-Origins includes base codename because security patches often

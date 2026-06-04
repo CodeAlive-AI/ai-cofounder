@@ -31,6 +31,15 @@ So security does **not** rest on the network ingress CIDR. It rests on:
 
 A user who genuinely wants to restrict SSH to a fixed IP or office CIDR can still edit the security group themselves (e.g. replace the ingress rule's `v4-cidrs` with their `<CIDR>`), but that is **not** the default and the wizard never does it automatically — the open default is the right trade-off for dynamic users plus an automation agent.
 
+### Running the controlling agent over SSH (avoid self-inflicted bans)
+
+The wizard removes the server-side throttles (`ufw allow` not `limit`, `MaxStartups 100:30:200`, `MaxSessions 50`, `MaxAuthTries 10`, fail2ban pinned to `mode = normal`). To stay clean from the **client** side, the agent making frequent SSH calls should:
+
+- **Pin the identity:** `ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 openclaw@$IP …`. Without `IdentitiesOnly`, ssh offers every key in your agent/keyring first; on a machine with many keys those probes can rack up auth attempts (the reason `MaxAuthTries` was raised to 10). `IdentitiesOnly` makes ssh present only the one correct key, so auth succeeds on the first try and fail2ban never sees a failure.
+- **Reuse the connection (optional but ideal for a busy agent):** multiplex many commands over one TCP connection via `ControlMaster auto` / `ControlPersist 10m` in `~/.ssh/config` (this is why `MaxSessions` is 50), eliminating handshake churn entirely.
+
+With key-only auth + `mode = normal` fail2ban, an authenticated agent is never banned even without these client tweaks — they're defense-in-depth and a latency win, not a requirement.
+
 ## What `cloud-init.yaml` hardens on top of YC defaults
 
 Yandex Cloud's Ubuntu 24.04 image is reasonable but plain. The cloud-init layers on a CIS-aligned, Mozilla "Modern" OpenSSH baseline.
@@ -46,7 +55,7 @@ Validated before `systemctl reload ssh` (a bad config would lock us out forever 
 | `KbdInteractiveAuthentication` | `no` | Belt and suspenders — `PasswordAuth=no` alone leaves PAM challenge-response paths open in some PAM configs. |
 | `PubkeyAuthentication` | `yes` | The only allowed factor. |
 | `PermitEmptyPasswords` | `no` | Default, but explicit for audit clarity. |
-| `MaxAuthTries` | `4` | Disconnect on the 5th try. Tuned up from CIS's `3` because non-DevOps users frequently mistype the key passphrase 2–3 times on first connect — `3` would trip them before they're warmed up. |
+| `MaxAuthTries` | `10` | Raised from CIS's `3–4`: a controlling automation agent may offer several SSH identities from its agent/keyring before the right key — a low cap exhausts into "Too many authentication failures", which also trips fail2ban and bans the agent. Key-only auth keeps a higher value safe. (The agent should still use `-o IdentitiesOnly=yes`.) |
 | `LoginGraceTime` | `30` | Drop slow / scanning connections fast. |
 | `AllowUsers` | `openclaw` | Only one user can log in. |
 | `MaxSessions` | `50` | Raised high so the automation AI agent's many concurrent SSH sessions are never throttled. A single human wouldn't need this, but the managing agent does. |

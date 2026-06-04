@@ -10,6 +10,7 @@ customizations:
   - Hetzner firewall model adapted — default-DENY inbound (must add SSH rule explicitly), default-ALLOW outbound (no rule needed for Telegram/Anthropic/OpenRouter/OpenAI egress)
   - Cloud-init reused from YC version (ARM-compatible — no hardcoded eth0); only currency, console URLs, and CLI invocations differ
   - 0.1.1 (2026-06-04) — removed SSH rate-limiting (ufw `allow` instead of `limit`; raised MaxStartups 10:30:60→100:30:200 and MaxSessions 4→50) and per-IP firewall lock (SSH open to 0.0.0.0/0 + ::/0, MY_IP/ipify detection dropped) so an automation AI agent making frequent SSH calls from dynamic IPs is never throttled or banned; key-only auth + fail2ban remain the controls (fail2ban bans only repeated FAILED auths, never an authenticated key user)
+  - 0.1.2 (2026-06-04) — agent-safety hardening pass after audit: `MaxAuthTries 4→10` (a multi-key agent exhausting 4 attempts would hit "Too many authentication failures" → a fail2ban failure → ban) and pinned fail2ban `[sshd] mode = normal` (so a future distro default of aggressive/ddos can't start counting the agent's pre-auth connection churn). Added a "Running the controlling agent over SSH" section (IdentitiesOnly + ControlMaster) to references/02 and fixed stale "tight SSH ingress" prose left over from 0.1.1.
 notes: |
   Companion to install-openclaw-to-yc, not a replacement. Pick by the target
   cloud. Both end with the same shape: one VM, one OpenClaw bot paired to

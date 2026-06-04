@@ -44,6 +44,15 @@ customizations:
     remain the controls (fail2ban bans only on FAILED auths, never an
     authenticated key user). Touched cloud-init.yaml, SKILL.md, references/02,
     references/04.
+  - v0.1.3: agent-safety hardening pass after audit. Two residual ways a frequent
+    SSH agent could still get banned, now closed: (1) `MaxAuthTries 4→10` — a
+    controlling agent offering several identities from its keyring would exhaust 4
+    attempts into "Too many authentication failures", which is itself a fail2ban
+    failure → ban; (2) pinned fail2ban `[sshd] mode = normal` so a future distro
+    default of aggressive/ddos can't start counting the agent's pre-auth
+    "Connection closed [preauth]" churn. Added a "Running the controlling agent
+    over SSH" section (IdentitiesOnly + ControlMaster) to references/02 and fixed
+    stale "tight SSH ingress" prose left over from v0.1.2.
 notes: |
   Wizard skill (for a code agent: Claude Code / Codex / Cursor / OpenClaw) that
   takes a non-DevOps user from zero to a working OpenClaw bot on a fresh
