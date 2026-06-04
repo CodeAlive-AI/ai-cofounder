@@ -341,8 +341,15 @@ write_files:
         # Source credentials so openclaw onboard/config see them
         set -a; . ~/.openclaw/gateway.env; set +a
 
-        # Non-interactive scaffold (idempotent)
-        openclaw onboard --no-prompt || true
+        # Non-interactive scaffold (idempotent). The real non-interactive flag is
+        # `--non-interactive` (it requires `--accept-risk`, per OpenClaw onboarding
+        # security checkpoint). The older `--no-prompt` is NOT a real flag on
+        # current CLIs — Commander swallows it and onboard becomes a silent no-op.
+        # Try the correct flags first; fall back for older builds. The follow-up
+        # `openclaw config set ...` calls below do the actual configuration either
+        # way, so this is only a best-effort scaffold.
+        openclaw onboard --non-interactive --accept-risk 2>/dev/null \
+          || openclaw onboard --no-prompt 2>/dev/null || true
 
         # Telegram channel
         openclaw config set channels.telegram.enabled true
