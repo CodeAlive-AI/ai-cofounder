@@ -98,7 +98,8 @@ install-openclaw-to-yc/
 ├── SOURCE.md                             # Origin tracking
 ├── README.md                             # This file
 ├── scripts/
-│   └── cloud-init.yaml                   # VM bootstrap (Node 22, OpenClaw, hardening, ceo-ai-os workspace, systemd)
+│   ├── cloud-init.yaml                   # VM bootstrap (Node 22, OpenClaw, hardening, ceo-ai-os workspace, systemd)
+│   └── locale/                           # ru/kk locale packs (base64'd into cloud-init)
 └── references/
     ├── 01-prerequisites.md               # yc CLI for KZ endpoint, named profiles, SSH, OAuth (Plan A)
     ├── 02-network-and-security.md        # SG rules, public-IP vs NAT, hardening rationale, lockout recovery

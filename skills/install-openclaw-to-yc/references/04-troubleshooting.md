@@ -2,7 +2,7 @@
 
 The six failure modes the wizard can hit, in order of how often they actually happen. Each one has a copy-paste fix that doesn't require guessing.
 
-For any error not listed: dump `cat /var/log/openclaw-bootstrap.log` and `journalctl --user -u openclaw-gateway -n 200` from the VM and surface to the user. Don't extrapolate from a tail of 5 lines.
+For any error not listed: dump `cat /var/log/openclaw-bootstrap.log` and `sudo journalctl -u openclaw-gateway -n 200` from the VM and surface to the user. Don't extrapolate from a tail of 5 lines.
 
 ---
 
@@ -118,7 +118,7 @@ The bootstrap script is idempotent — re-running picks up where it left off.
 **Fix.** Wait. Verify the gateway is actually starting up:
 
 ```bash
-ssh openclaw@$IP 'journalctl --user -u openclaw-gateway -n 40 --no-pager'
+ssh openclaw@$IP 'sudo journalctl -u openclaw-gateway -n 40 --no-pager'
 # Look for "[gateway] ready" — when that appears, RPC works.
 ```
 
@@ -126,7 +126,7 @@ If after 4 minutes there's still no `[gateway] ready`:
 
 ```bash
 # Force-restart the gateway. Watch journalctl in another terminal.
-ssh openclaw@$IP 'systemctl --user restart openclaw-gateway && sleep 120 && curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:18789/health'
+ssh openclaw@$IP 'sudo systemctl restart openclaw-gateway && sleep 120 && curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:18789/health'
 # Expect 200.
 ```
 
@@ -179,7 +179,7 @@ After approve:
 ssh openclaw@$IP "
   openclaw config set channels.telegram.dmPolicy allowlist
   openclaw config set channels.telegram.allowFrom '[<chat_id>]'
-  systemctl --user restart openclaw-gateway
+  sudo systemctl restart openclaw-gateway
 "
 ```
 
@@ -188,7 +188,7 @@ ssh openclaw@$IP "
 Provider-specific:
 
 ```bash
-ssh openclaw@$IP 'journalctl --user -u openclaw-gateway -n 200 | grep -iE "anthropic|openrouter|openai|credit|billing|unauthorized"'
+ssh openclaw@$IP 'sudo journalctl -u openclaw-gateway -n 200 | grep -iE "anthropic|openrouter|openai|credit|billing|unauthorized"'
 ```
 
 | Error pattern | Where to fix |
@@ -217,7 +217,7 @@ ssh openclaw@$IP 'openclaw config set agents.defaults.model.primary openai-codex
 # OpenAI Codex (Plus only)
 ssh openclaw@$IP 'openclaw config set agents.defaults.model.primary openai-codex/gpt-4o'
 
-ssh openclaw@$IP 'systemctl --user restart openclaw-gateway'
+ssh openclaw@$IP 'sudo systemctl restart openclaw-gateway'
 ```
 
 **4f. Bot replies but in the wrong language.**

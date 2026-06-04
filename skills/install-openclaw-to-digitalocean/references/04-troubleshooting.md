@@ -2,7 +2,7 @@
 
 Failure modes the wizard can hit on DigitalOcean, in rough order of frequency. Each has a copy-paste fix that doesn't require guessing.
 
-For any error not listed: dump `cat /var/log/openclaw-bootstrap.log` and `journalctl --user -u openclaw-gateway -n 200` from the Droplet and surface to the user. Don't extrapolate from a tail of 5 lines.
+For any error not listed: dump `cat /var/log/openclaw-bootstrap.log` and `sudo journalctl -u openclaw-gateway -n 200` from the Droplet and surface to the user. Don't extrapolate from a tail of 5 lines.
 
 All `doctl` commands assume the `openclaw` context — add `--context openclaw` (or `doctl auth switch --context openclaw` once).
 
@@ -84,9 +84,9 @@ ssh openclaw@$IP 'sudo /usr/local/sbin/openclaw-bootstrap.sh'
 **Fix.** Wait, watch the journal:
 
 ```bash
-ssh openclaw@$IP 'journalctl --user -u openclaw-gateway -n 40 --no-pager'   # look for "[gateway] ready"
+ssh openclaw@$IP 'sudo journalctl -u openclaw-gateway -n 40 --no-pager'   # look for "[gateway] ready"
 # Still nothing after 4 min:
-ssh openclaw@$IP 'systemctl --user restart openclaw-gateway && sleep 120 && curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:18789/health'  # expect 200
+ssh openclaw@$IP 'sudo systemctl restart openclaw-gateway && sleep 120 && curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:18789/health'  # expect 200
 ```
 
 ---
@@ -104,13 +104,13 @@ Work the ladder in order.
 ```bash
 ssh openclaw@$IP 'openclaw pairing list telegram --format json' | jq .
 ssh openclaw@$IP 'openclaw pairing approve telegram <requestId>'
-ssh openclaw@$IP "openclaw config set channels.telegram.dmPolicy allowlist; openclaw config set channels.telegram.allowFrom '[<chat_id>]'; systemctl --user restart openclaw-gateway"
+ssh openclaw@$IP "openclaw config set channels.telegram.dmPolicy allowlist; openclaw config set channels.telegram.allowFrom '[<chat_id>]'; sudo systemctl restart openclaw-gateway"
 ```
 
 **4d. LLM provider has no credit / not authorized.**
 
 ```bash
-ssh openclaw@$IP 'journalctl --user -u openclaw-gateway -n 200 | grep -iE "anthropic|openrouter|openai|credit|billing|unauthorized"'
+ssh openclaw@$IP 'sudo journalctl -u openclaw-gateway -n 200 | grep -iE "anthropic|openrouter|openai|credit|billing|unauthorized"'
 ```
 
 | Error pattern | Fix |
@@ -120,7 +120,7 @@ ssh openclaw@$IP 'journalctl --user -u openclaw-gateway -n 200 | grep -iE "anthr
 | `Subscription required` (Codex OAuth) | active ChatGPT Plus/Pro needed |
 | `expired` / `refresh_token_reused` (Codex) | re-run `openclaw models auth login --provider openai-codex --device-code`; prune orphan profile (openclaw-guide §13) |
 
-**4e. Model not in the configured list.** `ssh openclaw@$IP 'openclaw models status'`, then set primary appropriately and `systemctl --user restart openclaw-gateway`.
+**4e. Model not in the configured list.** `ssh openclaw@$IP 'openclaw models status'`, then set primary appropriately and `sudo systemctl restart openclaw-gateway`.
 
 **4f. Replies in the wrong language.** Append the locale pack and reset the session:
 
@@ -136,23 +136,19 @@ ssh openclaw@$IP "openclaw sessions reset --channel telegram --to <chat_id>"
 
 The wizard avoids both of these by construction (it always SSHes as `openclaw@$IP`, and it reads the structured `/var/lib/openclaw-bootstrap-done` marker rather than scanning the log for the word "error"). They bite a **human** who debugs the box manually — so they're documented here, not as bugs.
 
-### §4.5a. `systemctl --user` via `ssh root@` fails with "Failed to connect to bus"
+### §4.5a. The gateway is a systemd **system** service — use `sudo systemctl`, not `--user`
 
-**Symptom.** You SSH in as `root` (or `sudo`/`runuser` into the user), run `systemctl --user status openclaw-gateway`, and get `Failed to connect to bus: No such file or directory`.
+The cloud-init installs `/etc/systemd/system/openclaw-gateway.service` running as `User=openclaw` — a **system** unit, **not** a `systemctl --user` unit. This is deliberate: a user-mode unit needs `loginctl enable-linger` + a live `XDG_RUNTIME_DIR`/user bus (fragile on a headless VM) **and** it can't apply the `Protect*`/`Restrict*` sandboxing — an unprivileged user manager rejects those with `status=218/EXIT_CAPABILITIES` and the gateway never starts.
 
-**Cause.** The user systemd instance needs `XDG_RUNTIME_DIR` pointing at the user's runtime dir, which is set up automatically only when you log in **as that user** (a real login session). Jumping in as root and `runuser`-ing across does not create the session bus env.
-
-**Fix — two options:**
+**Practical consequence when you debug by hand** — drive it through `sudo` (the `openclaw` user has NOPASSWD sudo):
 
 ```bash
-# Preferred: just connect as the openclaw user — the user bus comes up on login.
-ssh openclaw@$IP 'systemctl --user status openclaw-gateway'
-
-# If you must operate from a root shell, export the runtime dir explicitly:
-ssh root@$IP 'runuser -l openclaw -c "XDG_RUNTIME_DIR=/run/user/$(id -u openclaw) systemctl --user status openclaw-gateway"'
+ssh openclaw@$IP 'sudo systemctl status openclaw-gateway'
+ssh openclaw@$IP 'sudo journalctl -u openclaw-gateway -n 80 --no-pager'
+ssh openclaw@$IP 'sudo systemctl restart openclaw-gateway'
 ```
 
-The cloud-init's phase 6 sets `XDG_RUNTIME_DIR` for exactly this reason when it enables the service at boot. All of the wizard's post-boot steps use `ssh openclaw@$IP`, so they never hit this.
+Do **not** reach for `systemctl --user openclaw-gateway` — there is no user unit, so it reports `Unit openclaw-gateway.service not found` (or, from a root shell, `Failed to connect to bus`). With a system service there is **no** `XDG_RUNTIME_DIR`/linger requirement at all — that whole class of trap is gone.
 
 ### §4.5b. Benign installer warnings in the bootstrap log
 

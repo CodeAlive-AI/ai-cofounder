@@ -53,6 +53,36 @@ customizations:
     "Connection closed [preauth]" churn. Added a "Running the controlling agent
     over SSH" section (IdentitiesOnly + ControlMaster) to references/02 and fixed
     stale "tight SSH ingress" prose left over from v0.1.2.
+  - v0.1.4: second-field-test hardening (Oleg's manual DO install report). Four
+    genuine cloud-init bugs fixed, each verified against OpenClaw source via
+    CodeAlive MCP BEFORE editing (to avoid another phantom-flag mistake):
+    * #2 em-dash/Unicode in cloud-init comments -- one corrupted multibyte char
+      (-> lone 0x80) made cloud-init reject the whole YAML and fall back to DO's
+      default user-data, so NONE of the bootstrap ran. Template is now pure
+      ASCII; the two Cyrillic locale packs are base64 (`encoding: b64`) with
+      readable sources in scripts/locale/. Immune to byte mangling in transit.
+      Also kills #12 (the blanket sanitizer that mojibake'd the locale).
+    * #3 `sshd -t` ran before /run/sshd existed ("Missing privilege separation
+      directory") -- a transient race that failed the whole `set -euo pipefail`
+      bootstrap. Now `install -d -m 0755 /run/sshd` first.
+    * #5 the gateway unit was a `--user` unit carrying system-mode
+      Protect*/Restrict* directives, which an unprivileged user manager rejects
+      with status=218/CAPABILITIES -- the gateway never started. Switched to a
+      systemd SYSTEM service (/etc/systemd/system, User=openclaw): the sandboxing
+      now applies and the linger/XDG_RUNTIME_DIR fragility is gone. Kept
+      upstream's load-bearing RestartPreventExitStatus=78 / KillMode=control-group
+      / SuccessExitStatus=0 143; dropped RestrictNamespaces (can break headless
+      Chrome). Swept systemctl --user -> sudo systemctl across SKILL + references,
+      rewrote troubleshooting §4.5a (XDG trap -> system-service note), added
+      OPENCLAW_SERVICE_REPAIR_POLICY=external so `doctor --fix` can't install a
+      competing user unit.
+    * #6 was NOT a bug: source confirms `openclaw models auth login --provider
+      openai-codex --device-code` is the correct current command and
+      `openai-codex/gpt-5.5` a valid model id (a field note wrongly said to
+      rename to `codex` + shell out to native `codex login`). Left the flow
+      intact; added only a `plugins install clawhub:@openclaw/codex` fallback for
+      the "No provider plugins found" edge + a do-not-rename note.
+    Telegram raw-HTTP guard from the report was ignored on purpose (env-specific).
 notes: |
   Wizard skill (for a code agent: Claude Code / Codex / Cursor / OpenClaw) that
   takes a non-DevOps user from zero to a working OpenClaw bot on a fresh

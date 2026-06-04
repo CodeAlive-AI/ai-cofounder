@@ -25,7 +25,7 @@ description: >-
   useful from message one.
 license: MIT
 metadata:
-  version: 0.1.2
+  version: 0.1.3
 ---
 
 # Install OpenClaw to Hetzner Cloud
@@ -387,9 +387,16 @@ Cap at 15 minutes. If still not ready, surface to the user with a single sentenc
 
 Skip this entire step for `anthropic` and `openrouter` — they have the key already in `gateway.env` and the bot is ready to talk.
 
-For `openai-codex`, the cloud-init left the gateway running but without a model configured. Run the device-code OAuth flow now via SSH with a forced TTY:
+The provider id is **`openai-codex`** and the command **`openclaw models auth login --provider openai-codex --device-code`** is real and current (verified against OpenClaw `docs/providers/openai.md` — the device-code path exists specifically for headless/callback-hostile VMs; OpenClaw performs the OAuth itself and stores the profile as `openai-codex:default`). Do **not** rename the provider to `codex` (that is the agent-runtime id, a different concept) or shell out to a native `codex login` binary (not needed).
+
+For `openai-codex`, first make sure the Codex provider is loadable, then run the device-code OAuth flow now via SSH with a forced TTY:
 
 ```bash
+# The openai-codex auth provider ships in the bundled `openai` extension, but on
+# some builds the login errors with "No provider plugins found" until the Codex
+# plugin is present. Ensure it once (idempotent, harmless if already there):
+ssh openclaw@$IP "openclaw plugins install clawhub:@openclaw/codex 2>/dev/null || true"
+
 ssh -tt -o ServerAliveInterval=30 openclaw@$IP \
   "openclaw models auth login --provider openai-codex --device-code" \
   | tee /tmp/openclaw-oauth.log
@@ -432,7 +439,7 @@ else
     && openclaw config set agents.defaults.model.fallbacks '[]'"
 fi
 
-ssh openclaw@$IP "systemctl --user restart openclaw-gateway"
+ssh openclaw@$IP "sudo systemctl restart openclaw-gateway"
 ```
 
 If after 15 minutes the SSH session timed out and `auth-profiles.json` still has no `openai-codex` profile: tell the user "не получилось войти в ChatGPT, давай попробуем ещё раз" and re-run the SSH `openclaw models auth login` command. Don't kill the VM — only the OAuth step needs to be retried.
@@ -504,7 +511,7 @@ ssh openclaw@$IP "
   openclaw config set channels.telegram.dmPolicy allowlist
   openclaw config set channels.telegram.allowFrom '[${CHAT_ID}]'
   echo 'TELEGRAM_CHAT_ID=${CHAT_ID}' >> /home/openclaw/.openclaw/gateway.env
-  systemctl --user restart openclaw-gateway
+  sudo systemctl restart openclaw-gateway
 "
 ```
 
@@ -545,7 +552,7 @@ curl -fsS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
 
 ```bash
 ssh openclaw@$IP "
-  timeout 90 journalctl --user -u openclaw-gateway -f --no-pager 2>/dev/null \
+  timeout 90 sudo journalctl -u openclaw-gateway -f --no-pager 2>/dev/null \
     | grep -m1 -E 'telegram.*sent|outgoing.*telegram|sendMessage.*ok'
 "
 ```
@@ -702,7 +709,7 @@ If anything fails during the wizard run, check these first — most Hetzner-side
 | SSH `Permission denied (publickey)` | `references/04-troubleshooting.md` §5 |
 | Forgot IP, lost SSH, want to start over | `references/04-troubleshooting.md` §6 |
 
-For everything else: dump `/var/log/openclaw-bootstrap.log` and `journalctl --user -u openclaw-gateway -n 200` from the VM, surface to the user as "вот что я вижу, давай разбираться", do not guess.
+For everything else: dump `/var/log/openclaw-bootstrap.log` and `sudo journalctl -u openclaw-gateway -n 200` from the VM, surface to the user as "вот что я вижу, давай разбираться", do not guess.
 
 ## References
 
@@ -710,7 +717,7 @@ For everything else: dump `/var/log/openclaw-bootstrap.log` and `journalctl --us
 - `references/02-network-and-security.md` — Hetzner firewall model, public-IP rationale, hardening choices
 - `references/03-openclaw-config.md` — Telegram pairing flow, all three LLM providers, workspace seeding
 - `references/04-troubleshooting.md` — 7 failure modes with copy-paste fixes
-- `scripts/cloud-init.yaml` — the full VM bootstrap (Node, OpenClaw, hardening, ceo-ai-os workspace, systemd user service)
+- `scripts/cloud-init.yaml` — the full VM bootstrap (Node, OpenClaw, hardening, ceo-ai-os workspace, systemd system service)
 
 ## Companion skills
 

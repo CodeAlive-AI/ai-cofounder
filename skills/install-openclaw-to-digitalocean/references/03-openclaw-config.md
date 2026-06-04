@@ -32,7 +32,7 @@ After approval the wizard locks the channel down:
 ssh openclaw@$IP "
   openclaw config set channels.telegram.dmPolicy allowlist
   openclaw config set channels.telegram.allowFrom '[<chat_id>]'
-  systemctl --user restart openclaw-gateway
+  sudo systemctl restart openclaw-gateway
 "
 ```
 

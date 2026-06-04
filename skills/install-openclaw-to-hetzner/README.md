@@ -97,7 +97,8 @@ install-openclaw-to-hetzner/
 ├── SOURCE.md                             # Origin tracking
 ├── README.md                             # This file
 ├── scripts/
-│   └── cloud-init.yaml                   # VM bootstrap (Node 22, OpenClaw, hardening, ceo-ai-os workspace, systemd)
+│   ├── cloud-init.yaml                   # VM bootstrap (Node 22, OpenClaw, hardening, ceo-ai-os workspace, systemd)
+│   └── locale/                           # ru/de locale packs (base64'd into cloud-init)
 └── references/
     ├── 01-prerequisites.md               # hcloud CLI, API token creation & scopes, SSH, account verification
     ├── 02-network-and-security.md        # Hetzner firewall model, public-IP rationale, hardening choices, lockout recovery (Rescue Mode)

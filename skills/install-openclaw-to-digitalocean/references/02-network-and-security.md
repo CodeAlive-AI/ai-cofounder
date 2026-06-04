@@ -10,7 +10,7 @@ OpenClaw is not a sandboxed SaaS. On the box it runs on, it is effectively a rem
 
 | Risk | Reality | What we do about it |
 |---|---|---|
-| **Full shell access** | The gateway runs an LLM that can execute arbitrary commands (that's the point — it's an agent). A prompt-injection or a confused-deputy moment can run anything the `openclaw` user can run. | Dedicated non-root `openclaw` user; systemd sandboxing (`NoNewPrivileges`, `ProtectKernel*`, `RestrictNamespaces`); the box holds nothing but the bot. |
+| **Full shell access** | The gateway runs an LLM that can execute arbitrary commands (that's the point — it's an agent). A prompt-injection or a confused-deputy moment can run anything the `openclaw` user can run. | Dedicated non-root `openclaw` user; systemd **system**-service sandboxing (`NoNewPrivileges`, `PrivateTmp`, `ProtectKernel*`/`Clock`); the box holds nothing but the bot. |
 | **Plaintext credentials** | Provider API keys and the Telegram token sit in `~/.openclaw/gateway.env` (mode 600) and `auth-profiles.json`. Anyone who gets the SSH key or root can read them. | Key-only auth (the SSH key is the only way in), ufw + fail2ban, sudo I/O logging for forensics. Keys are scoped/cheap to rotate (a $5 Anthropic key, a revocable bot token). |
 | **Bootstrap secrets in metadata** | DO keeps the rendered cloud-init (with the injected secrets) at `169.254.169.254/metadata/v1/user-data` for the Droplet's life. No API wipes it. | We scrub the on-disk copy; we treat the Droplet as single-tenant and tell the user not to add other users. |
 | **Standing cloud token** | The DO API token can create/destroy across the account. | Use a **scoped, named, expiring** token (`openclaw`, 90 days); the running bot never uses it — only provisioning/teardown does. Revoke it after setup if you won't manage via CLI for a while. |
@@ -96,7 +96,9 @@ Unlike YC, DO's stock image **does** ship `snapd`. We stop and `apt purge` it (C
 
 ### 5. systemd hardening (gateway unit)
 
-`NoNewPrivileges`, `PrivateTmp`, `ProtectControlGroups/KernelModules/KernelTunables/KernelLogs/Clock`, `RestrictRealtime/SUIDSGID/Namespaces`, `LockPersonality`, plus `MemoryHigh=1500M` / `MemoryMax=2500M` with `Restart=always` for self-recovery. Combined with the 2 GB swapfile the bootstrap adds, this survives the gateway's slow RSS creep even on a 2 GB Droplet.
+The gateway runs as a systemd **system** service (`/etc/systemd/system/openclaw-gateway.service`, `User=openclaw`) — **not** a `--user` unit. That choice is load-bearing: a user-mode unit can't apply the sandboxing below (an unprivileged user manager rejects `Protect*`/`Restrict*` with `status=218/CAPABILITIES`, so the gateway would refuse to start), and it would need fragile `enable-linger` + `XDG_RUNTIME_DIR` plumbing on a headless box. As a system service none of that applies.
+
+Directives: `NoNewPrivileges`, `PrivateTmp`, `ProtectControlGroups/KernelModules/KernelTunables/KernelLogs/Clock`, `RestrictRealtime/SUIDSGID`, `LockPersonality`, plus `MemoryHigh=1500M` / `MemoryMax=2500M` with `Restart=always` (and upstream's `RestartPreventExitStatus=78` + `KillMode=control-group`) for self-recovery. `RestrictNamespaces` is intentionally **omitted** — OpenClaw can spawn a headless Chrome/browser worker that relies on namespaces. Combined with the 2 GB swapfile the bootstrap adds, this survives the gateway's slow RSS creep even on a 2 GB Droplet.
 
 ### Recovery if you lock yourself out
 

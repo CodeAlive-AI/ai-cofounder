@@ -23,7 +23,7 @@ description: >-
   and write them into USER.md so the bot is useful from message one.
 license: MIT
 metadata:
-  version: 0.1.3
+  version: 0.1.4
 ---
 
 # Install OpenClaw to DigitalOcean
@@ -366,9 +366,16 @@ Cap at 15 minutes. If still not ready, surface to the user ("Что-то пош�
 
 Skip this entire step for `anthropic` and `openrouter`.
 
-For `openai-codex`, run the device-code OAuth flow over SSH with a forced TTY:
+The provider id is **`openai-codex`** and the command **`openclaw models auth login --provider openai-codex --device-code`** is real and current (verified against OpenClaw `docs/providers/openai.md` — the device-code path exists specifically for headless/callback-hostile VMs; OpenClaw performs the OAuth itself and stores the profile as `openai-codex:default`). Do **not** rename the provider to `codex` (that is the agent-runtime id, a different concept) or shell out to a native `codex login` binary (not needed).
+
+For `openai-codex`, first make sure the Codex provider is loadable, then run the device-code OAuth flow over SSH with a forced TTY:
 
 ```bash
+# The openai-codex auth provider ships in the bundled `openai` extension, but on
+# some builds the login errors with "No provider plugins found" until the Codex
+# plugin is present. Ensure it once (idempotent, harmless if already there):
+ssh openclaw@$IP "openclaw plugins install clawhub:@openclaw/codex 2>/dev/null || true"
+
 ssh -tt -o ServerAliveInterval=30 openclaw@$IP \
   "openclaw models auth login --provider openai-codex --device-code" | tee /tmp/openclaw-oauth.log
 ```
@@ -396,7 +403,7 @@ if [[ "$HAS_GPT55" == "gpt-5.5" ]]; then
 else
   ssh openclaw@$IP "openclaw config set agents.defaults.model.primary 'openai-codex/gpt-4o' && openclaw config set agents.defaults.model.fallbacks '[]'"
 fi
-ssh openclaw@$IP "systemctl --user restart openclaw-gateway"
+ssh openclaw@$IP "sudo systemctl restart openclaw-gateway"
 ```
 
 If after 15 minutes there's still no `openai-codex` profile: tell the user "не получилось войти в ChatGPT, давай ещё раз" and re-run the auth command. Don't destroy the Droplet — only the OAuth step needs retrying.
@@ -456,7 +463,7 @@ ssh openclaw@$IP "
   openclaw config set channels.telegram.dmPolicy allowlist
   openclaw config set channels.telegram.allowFrom '[${CHAT_ID}]'
   echo 'TELEGRAM_CHAT_ID=${CHAT_ID}' >> /home/openclaw/.openclaw/gateway.env
-  systemctl --user restart openclaw-gateway
+  sudo systemctl restart openclaw-gateway
 "
 # Wait for /health 200 before Step 5
 for i in $(seq 1 30); do
@@ -487,7 +494,7 @@ curl -fsS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -d "ch
 **Check 1 — Gateway logged an outgoing message** within 90s:
 
 ```bash
-ssh openclaw@$IP "timeout 90 journalctl --user -u openclaw-gateway -f --no-pager 2>/dev/null \
+ssh openclaw@$IP "timeout 90 sudo journalctl -u openclaw-gateway -f --no-pager 2>/dev/null \
   | grep -m1 -E 'telegram.*sent|outgoing.*telegram|sendMessage.*ok'"
 ```
 
@@ -608,7 +615,7 @@ If the verification ping doesn't get a reply within 60s, run `references/04-trou
 | Forgot the IP / lost SSH | `references/04-troubleshooting.md` §6 |
 | Worried about cost / wants to stop paying | `references/04-troubleshooting.md` §7 (destroy, not power-off) |
 
-For everything else: dump `/var/log/openclaw-bootstrap.log` and `journalctl --user -u openclaw-gateway -n 200` from the Droplet, surface to the user as "вот что я вижу, давай разбираться", do not guess.
+For everything else: dump `/var/log/openclaw-bootstrap.log` and `sudo journalctl -u openclaw-gateway -n 200` from the Droplet, surface to the user as "вот что я вижу, давай разбираться", do not guess.
 
 ## References
 
@@ -617,7 +624,7 @@ For everything else: dump `/var/log/openclaw-bootstrap.log` and `journalctl --us
 - `references/03-openclaw-config.md` — Telegram pairing flow, all three LLM providers, workspace seeding.
 - `references/04-troubleshooting.md` — failure modes with copy-paste fixes (incl. the power-off-still-bills trap).
 - `references/05-marketplace-and-workshop.md` — DO Marketplace 1-click alternative (and why automation skips it) + workshop shared-token mode.
-- `scripts/cloud-init.yaml` — the full Droplet bootstrap (swap, Node, OpenClaw, hardening, ceo-ai-os workspace, systemd user service).
+- `scripts/cloud-init.yaml` — the full Droplet bootstrap (swap, Node, OpenClaw, hardening, ceo-ai-os workspace, systemd system service).
 
 ## Companion skills
 

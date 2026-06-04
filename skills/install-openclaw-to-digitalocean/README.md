@@ -75,7 +75,8 @@ install-openclaw-to-digitalocean/
 ├── SOURCE.md                             # Origin tracking (derived from install-openclaw-to-yc)
 ├── README.md                             # This file
 ├── scripts/
-│   └── cloud-init.yaml                   # Droplet bootstrap (swap, Node, OpenClaw, hardening, ceo-ai-os, systemd)
+│   ├── cloud-init.yaml                   # Droplet bootstrap (swap, Node, OpenClaw, hardening, ceo-ai-os, systemd)
+│   └── locale/                           # ru/kk locale packs (base64'd into cloud-init)
 └── references/
     ├── 01-prerequisites.md               # doctl, API token + contexts, SSH-key upload, billing checks
     ├── 02-network-and-security.md        # Cloud Firewall, hardening, the "dangerous install" threat model, cost

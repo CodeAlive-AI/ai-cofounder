@@ -3,17 +3,17 @@
 #
 # The wizard in SKILL.md substitutes four placeholders before passing this
 # file to `doctl compute droplet create --user-data-file ...`:
-#   {{SSH_PUBLIC_KEY}}     — single-line authorized_key for the openclaw user
+#   {{SSH_PUBLIC_KEY}}     -- single-line authorized_key for the openclaw user
 #                            (DO also injects the account SSH key for root via
 #                             --ssh-keys; this line gives the openclaw user its
 #                             own copy so we never log in as root)
-#   {{TELEGRAM_BOT_TOKEN}} — BotFather token
-#   {{LLM_ENV_LINE}}       — ONE of:
+#   {{TELEGRAM_BOT_TOKEN}} -- BotFather token
+#   {{LLM_ENV_LINE}}       -- ONE of:
 #                              ANTHROPIC_API_KEY=sk-ant-...
 #                              OPENROUTER_API_KEY=sk-or-...
-#                              (empty string — for OpenAI Codex OAuth flow,
+#                              (empty string -- for OpenAI Codex OAuth flow,
 #                               which the wizard runs via SSH after bootstrap)
-#   {{USER_LANGUAGE}}      — ISO 639-1 code of the user's language: `ru`, `en`,
+#   {{USER_LANGUAGE}}      -- ISO 639-1 code of the user's language: `ru`, `en`,
 #                              `kk`, ... The bot will answer in this language
 #                              by default. Defaults to `ru` for the workshop
 #                              audience.
@@ -28,7 +28,7 @@
 #
 # DigitalOcean note: unlike Yandex Cloud, DO charges for a Droplet even when it
 # is powered off. The only way to stop billing is to destroy it (optionally
-# snapshot first). There is no cheap "parked" state — see references/04.
+# snapshot first). There is no cheap "parked" state -- see references/04.
 
 package_update: true
 package_upgrade: true
@@ -53,7 +53,7 @@ users:
       - "{{SSH_PUBLIC_KEY}}"
 
 write_files:
-  # SSH hardening — drop-in (preserved across openssh-server upgrades).
+  # SSH hardening -- drop-in (preserved across openssh-server upgrades).
   # Based on CIS Ubuntu 24.04 Benchmark + Mozilla "Modern" OpenSSH guidelines.
   # Items already off by default in OpenSSH 9.7+ (Protocol 1, RhostsAuth,
   # KerberosAuth, GSSAPIAuth, HostbasedAuth, IgnoreRhosts) are not repeated.
@@ -70,7 +70,7 @@ write_files:
       # Raised from CIS's 4: a controlling automation agent may present several
       # SSH identities from its ssh-agent/keyring before offering the right key.
       # With MaxAuthTries 4 those probes exhaust into "Too many authentication
-      # failures" — which also registers as a fail2ban failure and bans the
+      # failures" -- which also registers as a fail2ban failure and bans the
       # agent. Key-only auth keeps a higher value safe. (Belt-and-suspenders:
       # the controlling agent should also use `-o IdentitiesOnly=yes -i <key>`.)
       MaxAuthTries 10
@@ -87,7 +87,7 @@ write_files:
       MaxSessions 50
       MaxStartups 100:30:200
 
-      # --- Forwarding / tunneling (defense in depth — none of these are
+      # --- Forwarding / tunneling (defense in depth -- none of these are
       #     needed by OpenClaw, and turning them off limits blast-radius if
       #     the SSH key ever leaks) ---
       AllowTcpForwarding no
@@ -111,7 +111,7 @@ write_files:
       MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com
       HostKeyAlgorithms ssh-ed25519-cert-v01@openssh.com,ssh-ed25519,rsa-sha2-512-cert-v01@openssh.com,rsa-sha2-512,rsa-sha2-256-cert-v01@openssh.com,rsa-sha2-256
 
-  # fail2ban — escalating ban on SSH brute force.
+  # fail2ban -- escalating ban on SSH brute force.
   # Reads sshd events from systemd journal (Ubuntu 24.04 default).
   #
   # IMPORTANT: fail2ban bans ONLY on repeated FAILED authentications. A
@@ -124,7 +124,7 @@ write_files:
   # Tuned for a single non-DevOps user: forgiving on first mistakes
   # (5 retries before any ban, 1h initial bantime, 24h cap) but still
   # blocks sustained brute force. The aggressive [recidive] jail is
-  # intentionally OFF — for a 1-user VM it's too easy to lock yourself
+  # intentionally OFF -- for a 1-user VM it's too easy to lock yourself
   # out for a week with a misconfigured laptop.
   - path: /etc/fail2ban/jail.local
     permissions: '0644'
@@ -140,8 +140,8 @@ write_files:
       # fail2ban still bans brute-forcers on FAILED auths only.
       ignoreself = true
       ignoreip   = 127.0.0.1/8 ::1
-      # Recidivism: each repeat ban gets multiplied (2 × previous), capped at 24h.
-      # Cap is deliberately 24h, not 1w — recovery via the DO recovery console is
+      # Recidivism: each repeat ban gets multiplied (2 x previous), capped at 24h.
+      # Cap is deliberately 24h, not 1w -- recovery via the DO recovery console is
       # painful for a non-DevOps user; we'd rather re-allow a noisy IP
       # the next day than strand the founder over a long weekend.
       bantime.increment = true
@@ -154,8 +154,8 @@ write_files:
       maxretry = 5
       # Pin the filter to "normal" so ONLY genuine failed authentications count.
       # The aggressive/ddos modes also count pre-auth "Connection closed
-      # [preauth]" churn — which a high-frequency automation agent produces in
-      # bulk — and would ban it despite valid keys. Pinning protects against a
+      # [preauth]" churn -- which a high-frequency automation agent produces in
+      # bulk -- and would ban it despite valid keys. Pinning protects against a
       # future distro/fail2ban default drifting away from "normal".
       mode     = normal
 
@@ -183,7 +183,7 @@ write_files:
       APT::Periodic::Unattended-Upgrade "1";
       APT::Periodic::AutocleanInterval "7";
 
-  # Sudo I/O + audit logging — relevant because we use NOPASSWD: ALL.
+  # Sudo I/O + audit logging -- relevant because we use NOPASSWD: ALL.
   # If the SSH key ever leaks, log_input/log_output preserves a forensic
   # trail of what the attacker did before they could clean it up.
   - path: /etc/sudoers.d/99-openclaw-logging
@@ -194,34 +194,28 @@ write_files:
       Defaults logfile="/var/log/sudo.log"
       Defaults iolog_dir="/var/log/sudo-io"
 
-  # Locale packs — appended to ~/.openclaw/workspace/USER.md after
+  # Locale packs -- appended to ~/.openclaw/workspace/USER.md after
   # ceo-ai-os/openclaw/install.sh runs, based on {{USER_LANGUAGE}}.
   # The bot reads USER.md on session start and adopts the preference.
   - path: /usr/local/share/openclaw-locale-ru.md
     permissions: '0644'
-    content: |
-
-      ## Язык общения
-
-      Я говорю по-русски. **Всегда отвечай мне на русском**, естественным дружелюбным тоном — как если бы мы переписывались в мессенджере, а не в корпоративном чате.
-
-      Технические термины и идентификаторы (имена моделей вроде `claude-sonnet-4-6`, CLI-команды типа `openclaw doctor`, имена файлов, JSON-ключи) оставляй на английском — переводить их неестественно.
-
-      Если я сам напишу тебе на другом языке (английский, казахский, …) — отвечай на нём же, пока я не переключусь обратно на русский.
+    encoding: b64
+    # base64 so this cloud-init stays pure ASCII (non-ASCII here
+    # historically corrupted into invalid YAML in transit). Edit the
+    # readable source then regenerate:
+    #   base64 -w0 scripts/locale/openclaw-locale-ru.md
+    content: CiMjINCv0LfRi9C6INC+0LHRidC10L3QuNGPCgrQryDQs9C+0LLQvtGA0Y4g0L/Qvi3RgNGD0YHRgdC60LguICoq0JLRgdC10LPQtNCwINC+0YLQstC10YfQsNC5INC80L3QtSDQvdCwINGA0YPRgdGB0LrQvtC8KiosINC10YHRgtC10YHRgtCy0LXQvdC90YvQvCDQtNGA0YPQttC10LvRjtCx0L3Ri9C8INGC0L7QvdC+0Lwg4oCUINC60LDQuiDQtdGB0LvQuCDQsdGLINC80Ysg0L/QtdGA0LXQv9C40YHRi9Cy0LDQu9C40YHRjCDQsiDQvNC10YHRgdC10L3QtNC20LXRgNC1LCDQsCDQvdC1INCyINC60L7RgNC/0L7RgNCw0YLQuNCy0L3QvtC8INGH0LDRgtC1LgoK0KLQtdGF0L3QuNGH0LXRgdC60LjQtSDRgtC10YDQvNC40L3RiyDQuCDQuNC00LXQvdGC0LjRhNC40LrQsNGC0L7RgNGLICjQuNC80LXQvdCwINC80L7QtNC10LvQtdC5INCy0YDQvtC00LUgYGNsYXVkZS1zb25uZXQtNC02YCwgQ0xJLdC60L7QvNCw0L3QtNGLINGC0LjQv9CwIGBvcGVuY2xhdyBkb2N0b3JgLCDQuNC80LXQvdCwINGE0LDQudC70L7QsiwgSlNPTi3QutC70Y7Rh9C4KSDQvtGB0YLQsNCy0LvRj9C5INC90LAg0LDQvdCz0LvQuNC50YHQutC+0Lwg4oCUINC/0LXRgNC10LLQvtC00LjRgtGMINC40YUg0L3QtdC10YHRgtC10YHRgtCy0LXQvdC90L4uCgrQldGB0LvQuCDRjyDRgdCw0Lwg0L3QsNC/0LjRiNGDINGC0LXQsdC1INC90LAg0LTRgNGD0LPQvtC8INGP0LfRi9C60LUgKNCw0L3Qs9C70LjQudGB0LrQuNC5LCDQutCw0LfQsNGF0YHQutC40LksIOKApikg4oCUINC+0YLQstC10YfQsNC5INC90LAg0L3RkdC8INC20LUsINC/0L7QutCwINGPINC90LUg0L/QtdGA0LXQutC70Y7Rh9GD0YHRjCDQvtCx0YDQsNGC0L3QviDQvdCwINGA0YPRgdGB0LrQuNC5Lgo=
 
   - path: /usr/local/share/openclaw-locale-kk.md
     permissions: '0644'
-    content: |
+    encoding: b64
+    # base64 so this cloud-init stays pure ASCII (non-ASCII here
+    # historically corrupted into invalid YAML in transit). Edit the
+    # readable source then regenerate:
+    #   base64 -w0 scripts/locale/openclaw-locale-kk.md
+    content: CiMjINCi0ZbQuwoK0JzQtdC9INKb0LDQt9Cw0pvRiNCwINGB06nQudC70LXQudC80ZbQvS4g0JzQsNKT0LDQvSDTmdGA0pvQsNGI0LDQvSDSm9Cw0LfQsNKbINGC0ZbQu9GW0L3QtNC1INC20LDRg9Cw0L8g0LHQtdGAIOKAlCDRgtCw0LHQuNKT0LgsINC00L7RgdGC0YvSmyDSr9C90LzQtdC9LCDQvNC10YHRgdC10L3QtNC20LXRgNC00LXQs9GWINGB0LjRj9Kb0YLRiy4KCtCi0LXRhdC90LjQutCw0LvRi9KbINGC0LXRgNC80LjQvdC00LXRgCDQvNC10L0g0LjQtNC10L3RgtC40YTQuNC60LDRgtC+0YDQu9Cw0YDQtNGLICjQvNC+0LTQtdC70Ywg0LDRgtGC0LDRgNGLIGBjbGF1ZGUtc29ubmV0LTQtNmAsIENMSS3QutC+0LzQsNC90LTQsNC70LDRgCBgb3BlbmNsYXcgZG9jdG9yYCwg0YTQsNC50Lsg0LDRgtGC0LDRgNGLLCBKU09OINC60ZbQu9GC0YLQtdGA0ZYpINCw0pPRi9C70YjRi9C9INGC0ZbQu9GW0L3QtNC1INKb0LDQu9C00YvRgC4KCtCV0LPQtdGAINC80LXQvSDQsdCw0YHSm9CwINGC0ZbQu9C00LUg0LbQsNC30YHQsNC8ICjQvtGA0YvRgdGI0LAsINCw0pPRi9C70YjRi9C90YjQsCksINGB0L7QuyDRgtGW0LvQtNC1INC20LDRg9Cw0L8g0LHQtdGALCDQvNC10L0g0pvQsNC50YLQsNC00LDQvSDSm9Cw0LfQsNKb0YjQsNKT0LAg0LrTqdGI0LrQtdC90YjQtS4K
 
-      ## Тіл
-
-      Мен қазақша сөйлеймін. Маған әрқашан қазақ тілінде жауап бер — табиғи, достық үнмен, мессенджердегі сияқты.
-
-      Техникалық терминдер мен идентификаторларды (модель аттары `claude-sonnet-4-6`, CLI-командалар `openclaw doctor`, файл аттары, JSON кілттері) ағылшын тілінде қалдыр.
-
-      Егер мен басқа тілде жазсам (орысша, ағылшынша), сол тілде жауап бер, мен қайтадан қазақшаға көшкенше.
-
-  # Credentials env-file — read by the gateway systemd unit. chmod 600 openclaw:openclaw.
+  # Credentials env-file -- read by the gateway systemd unit. chmod 600 openclaw:openclaw.
   # The wizard appends TELEGRAM_CHAT_ID=... at the end after auto-detecting it
   # from getUpdates (Step 4 in SKILL.md). For openai-codex the LLM line is empty
   # and the OAuth profile lives in ~/.openclaw/agents/main/agent/auth-profiles.json.
@@ -234,37 +228,65 @@ write_files:
       {{LLM_ENV_LINE}}
       PATH=/home/openclaw/.npm-global/bin:/usr/local/bin:/usr/bin:/bin
       HOME=/home/openclaw
+      # Stop `openclaw doctor --fix` installing a competing user-level gateway
+      # unit -- this skill runs the gateway as a system service (see above).
+      OPENCLAW_SERVICE_REPAIR_POLICY=external
 
-  # systemd user-unit for the gateway
-  - path: /home/openclaw/.config/systemd/user/openclaw-gateway.service
-    owner: openclaw:openclaw
+  # systemd SYSTEM service for the gateway (NOT a --user unit).
+  # A user-mode unit needs `loginctl enable-linger` + a live XDG_RUNTIME_DIR /
+  # user bus (fragile on a headless VM) AND it CANNOT apply the Protect*/
+  # Restrict* sandboxing below: an unprivileged user manager rejects those with
+  # status=218/EXIT_CAPABILITIES and the gateway never starts. A system unit
+  # running as User=openclaw fixes both -- the gateway resolves its config
+  # purely from $HOME (no login session) and the hardening applies cleanly.
+  # Upstream OpenClaw documents this exact system-mode layout for always-on
+  # servers (load-bearing directives RestartPreventExitStatus / KillMode /
+  # SuccessExitStatus are kept verbatim from upstream's generated unit).
+  - path: /etc/systemd/system/openclaw-gateway.service
     permissions: '0644'
-    defer: true
+    owner: root:root
     content: |
       [Unit]
       Description=OpenClaw Gateway
       After=network-online.target
       Wants=network-online.target
+      # The gateway exits with sysexits 78 (EX_CONFIG) on a supervised-lock or
+      # port conflict; RestartPreventExitStatus=78 below stops a crash-loop.
+      StartLimitIntervalSec=60
+      StartLimitBurst=5
 
       [Service]
       Type=simple
-      EnvironmentFile=%h/.openclaw/gateway.env
-      ExecStart=%h/.npm-global/bin/openclaw gateway run
+      User=openclaw
+      Group=openclaw
+      # HOME/PATH also come from the env file, but set them explicitly so the
+      # gateway can never start with a bare environment.
+      Environment=HOME=/home/openclaw
+      Environment=PATH=/home/openclaw/.npm-global/bin:/usr/local/bin:/usr/bin:/bin
+      WorkingDirectory=/home/openclaw
+      EnvironmentFile=/home/openclaw/.openclaw/gateway.env
+      ExecStart=/home/openclaw/.npm-global/bin/openclaw gateway run
       Restart=always
-      RestartSec=10
+      RestartSec=5
+      # 78 = clean config conflict (looping won't help); 143 = SIGTERM on stop.
+      RestartPreventExitStatus=78
+      SuccessExitStatus=0 143
       TimeoutStartSec=240
       TimeoutStopSec=60
+      # Keep child workers (ACP runtime, browser/Chrome) in the service cgroup
+      # so a restart never orphans them.
+      KillMode=control-group
 
-      # Memory limits — gateway is Node.js, accumulates ~1.5G RSS over days.
-      # MemoryMax + Restart=always = self-recovering. Tuned for the default
-      # s-2vcpu-4gb Droplet; on a 2 GB Droplet the bootstrap also adds a 2 GB
-      # swapfile (see phase 0) so MemoryMax=2500M still has somewhere to spill.
+      # Memory limits -- gateway is Node.js, accumulates ~1.5G RSS over days.
+      # MemoryMax + Restart=always = self-recovering. On a 2 GB VM the bootstrap
+      # also adds a 2 GB swapfile (phase 0) so MemoryMax=2500M has spill room.
       MemoryAccounting=yes
       MemoryHigh=1500M
       MemoryMax=2500M
 
-      # systemd hardening (does not restrict the user-space Node features
-      # OpenClaw needs; safe defense-in-depth for a single-user CEO bot).
+      # systemd sandboxing -- these now apply because this is a SYSTEM unit
+      # (a user manager would reject them with 218/CAPABILITIES). They do not
+      # restrict the user-space Node features OpenClaw needs.
       NoNewPrivileges=yes
       PrivateTmp=yes
       ProtectControlGroups=yes
@@ -275,12 +297,14 @@ write_files:
       RestrictRealtime=yes
       RestrictSUIDSGID=yes
       LockPersonality=yes
-      RestrictNamespaces=yes
+      # RestrictNamespaces is intentionally NOT set: OpenClaw may launch a
+      # headless Chrome/browser worker that relies on namespaces; restricting
+      # them risks breaking the browser. The directives above don't affect it.
 
       [Install]
-      WantedBy=default.target
+      WantedBy=multi-user.target
 
-  # Main bootstrap script — runs as root from runcmd
+  # Main bootstrap script -- runs as root from runcmd
   - path: /usr/local/sbin/openclaw-bootstrap.sh
     permissions: '0750'
     owner: root:root
@@ -292,7 +316,7 @@ write_files:
       phase() { printf '\n===== %s | %s =====\n' "$(date -u +%FT%TZ)" "$*"; }
       fail() { echo "ERROR: $*" >&2; exit 1; }
 
-      phase "0/8 Swap (2 GB) — survive OOM on small Droplets"
+      phase "0/8 Swap (2 GB) -- survive OOM on small Droplets"
       # DO's smaller Droplets (s-1vcpu-2gb) have no swap by default, and the
       # gateway + npm install can briefly spike past 2 GB. A 2 GB swapfile is
       # cheap insurance; on a 4 GB Droplet it's rarely touched but harmless.
@@ -309,7 +333,7 @@ write_files:
       fi
 
       phase "1/8 Firewall + SSH hardening + auto-updates"
-      # ufw — default-deny ingress, allow everything out (OpenClaw needs
+      # ufw -- default-deny ingress, allow everything out (OpenClaw needs
       # to talk to many SaaS APIs). SSH is `allow` (NOT `limit`): deployment
       # and ongoing work is done by an automation AI agent that makes frequent,
       # already-authenticated SSH connections; a `limit` rate-cap would drop
@@ -317,16 +341,21 @@ write_files:
       # (PasswordAuthentication no, AuthenticationMethods publickey) plus
       # fail2ban, which only ever bans on FAILED auths. This is a host-level
       # firewall that sits *behind* the DO Cloud Firewall the wizard also
-      # creates; defense in depth — if one is misconfigured, the other holds.
+      # creates; defense in depth -- if one is misconfigured, the other holds.
       ufw --force reset
       ufw default deny incoming
       ufw default allow outgoing
-      ufw allow 22/tcp comment 'SSH (open, no rate-limit — automation agent needs frequent connects; key-only auth is the control)'
+      ufw allow 22/tcp comment 'SSH (open, no rate-limit -- automation agent needs frequent connects; key-only auth is the control)'
       ufw logging low
       ufw --force enable
 
       # Validate the SSH drop-in before reloading sshd; a broken config
-      # would lock us out forever on a fresh VM.
+      # would lock us out forever on a fresh VM. `sshd -t` needs the privilege
+      # separation dir /run/sshd, which systemd creates only when sshd starts;
+      # this early in boot it does not exist yet, and without it `sshd -t` dies
+      # with "Missing privilege separation directory" (a transient race that
+      # would otherwise fail the whole `set -euo pipefail` bootstrap).
+      install -d -m 0755 -o root -g root /run/sshd
       sshd -t -f /etc/ssh/sshd_config || fail "sshd_config drop-in is invalid"
       systemctl reload ssh
 
@@ -334,7 +363,7 @@ write_files:
       systemctl enable --now unattended-upgrades
 
       # snapd ships on DO's stock Ubuntu 24.04 image (do-agent + snap). We
-      # purge it: CVE-2026-3888 (LPE in snapd) means any local user → root if
+      # purge it: CVE-2026-3888 (LPE in snapd) means any local user -> root if
       # a vulnerable snapd is present, and OpenClaw needs none of it.
       if dpkg -s snapd >/dev/null 2>&1; then
         systemctl stop snapd snapd.socket 2>/dev/null || true
@@ -373,7 +402,7 @@ write_files:
         fi
         bash ceo-ai-os/openclaw/install.sh
 
-        # Locale override — ceo-ai-os USER.md/SOUL.md are in English.
+        # Locale override -- ceo-ai-os USER.md/SOUL.md are in English.
         # Append the locale pack BEFORE the gateway starts its first session,
         # so the first reply already respects the language. Locale packs live
         # at /usr/local/share/openclaw-locale-<lang>.md (written above).
@@ -382,11 +411,11 @@ write_files:
           cat "$LOCALE_PACK" >> ~/.openclaw/workspace/USER.md
           echo "Locale applied: {{USER_LANGUAGE}}"
         else
-          echo "Locale pack for {{USER_LANGUAGE}} not found — keeping ceo-ai-os English default"
+          echo "Locale pack for {{USER_LANGUAGE}} not found -- keeping ceo-ai-os English default"
         fi
       '
 
-      phase "5/8 OpenClaw config — Telegram + LLM provider"
+      phase "5/8 OpenClaw config -- Telegram + LLM provider"
       sudo -iu openclaw bash -lc '
         set -euo pipefail
         export PATH=$HOME/.npm-global/bin:$PATH
@@ -396,7 +425,7 @@ write_files:
         # Non-interactive scaffold (idempotent). The real non-interactive flag is
         # `--non-interactive` (it requires `--accept-risk`, per OpenClaw onboarding
         # security checkpoint). The older `--no-prompt` is NOT a real flag on
-        # current CLIs — Commander swallows it and onboard becomes a silent no-op.
+        # current CLIs -- Commander swallows it and onboard becomes a silent no-op.
         # Try the correct flags first; fall back for older builds. The follow-up
         # `openclaw config set ...` calls below do the actual configuration either
         # way, so this is only a best-effort scaffold.
@@ -408,7 +437,7 @@ write_files:
         openclaw config set channels.telegram.botToken "$TELEGRAM_BOT_TOKEN"
         openclaw config set channels.telegram.dmPolicy "pairing"
 
-        # LLM provider — auto-detected from whichever env var the wizard set.
+        # LLM provider -- auto-detected from whichever env var the wizard set.
         # The unset case (no env var) is OpenAI Codex OAuth, handled post-boot
         # by the wizard via `openclaw models auth login --provider openai-codex`.
         if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
@@ -420,25 +449,26 @@ write_files:
           openclaw config set agents.defaults.model.fallbacks "[\"openrouter/openai/gpt-5.5\",\"openrouter/anthropic/claude-haiku-4-5\"]"
           echo "Configured: OpenRouter (moonshotai/kimi-k2.6 primary)"
         else
-          # OAuth flow case — leave primary unset, wizard will set it after
+          # OAuth flow case -- leave primary unset, wizard will set it after
           # `openclaw models auth login --provider openai-codex` completes
-          echo "Configured: no LLM env key — expecting OAuth login (openai-codex) from the wizard"
+          echo "Configured: no LLM env key -- expecting OAuth login (openai-codex) from the wizard"
         fi
 
-        # Gateway listens on loopback only — safe to disable token auth on a 1-user VM
+        # Gateway listens on loopback only -- safe to disable token auth on a 1-user VM
         openclaw config set gateway.auth.mode "none"
 
-        # Lower bootstrap budget — workshop bots don'\''t need 20 KB AGENTS.md
+        # Lower bootstrap budget -- workshop bots don'\''t need 20 KB AGENTS.md
         openclaw config set agents.defaults.bootstrapMaxChars 15000
       '
 
-      phase "6/8 Enable + start gateway as a user service"
-      loginctl enable-linger openclaw
-      RUNTIME_DIR=/run/user/$(id -u openclaw)
-      sudo -iu openclaw bash -lc "
-        XDG_RUNTIME_DIR='$RUNTIME_DIR' systemctl --user daemon-reload
-        XDG_RUNTIME_DIR='$RUNTIME_DIR' systemctl --user enable --now openclaw-gateway
-      "
+      phase "6/8 Enable + start gateway as a SYSTEM service"
+      # System unit (see write_files: /etc/systemd/system/openclaw-gateway.service).
+      # No `loginctl enable-linger`, no XDG_RUNTIME_DIR, no user bus -- a system
+      # service starts at boot and survives logout by design. This is also what
+      # lets the Protect*/Restrict* sandboxing apply (a user manager rejects it
+      # with status=218/CAPABILITIES).
+      systemctl daemon-reload
+      systemctl enable --now openclaw-gateway.service
 
       phase "7/8 Wait for /health 200 (up to 4 minutes)"
       for i in $(seq 1 48); do
@@ -449,9 +479,9 @@ write_files:
         sleep 5
       done
       curl -fsS -m 5 http://127.0.0.1:18789/health \
-        || fail "gateway did not become healthy in time — see journalctl --user -u openclaw-gateway"
+        || fail "gateway did not become healthy in time -- see journalctl -u openclaw-gateway"
 
-      phase "8/8 Finalize — secret scrub + ready marker"
+      phase "8/8 Finalize -- secret scrub + ready marker"
       # No welcome message here: TELEGRAM_CHAT_ID isn't known yet (the wizard
       # auto-detects it via getUpdates after the user presses /start, in Step 4
       # of SKILL.md), and the bot's dmPolicy is `pairing` until the wizard
@@ -459,7 +489,7 @@ write_files:
 
       # Scrub user-data left on disk by cloud-init (contains secrets). On DO the
       # rendered user-data is also retrievable from the metadata service at
-      # 169.254.169.254/metadata/v1/user-data for the Droplet's lifetime — there
+      # 169.254.169.254/metadata/v1/user-data for the Droplet's lifetime -- there
       # is no API to wipe it, so we at least remove the on-disk copies.
       shred -u /var/lib/cloud/instance/user-data.txt 2>/dev/null || \
         rm -f /var/lib/cloud/instance/user-data.txt
@@ -467,7 +497,7 @@ write_files:
         rm -f /var/lib/cloud/instance/cloud-config.txt
 
       touch /var/lib/openclaw-bootstrap-done
-      phase "DONE — OpenClaw is up."
+      phase "DONE -- OpenClaw is up."
 
 runcmd:
   - [ /usr/local/sbin/openclaw-bootstrap.sh ]
