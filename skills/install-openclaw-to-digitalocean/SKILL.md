@@ -23,7 +23,7 @@ description: >-
   and write them into USER.md so the bot is useful from message one.
 license: MIT
 metadata:
-  version: 0.1.0
+  version: 0.1.1
 ---
 
 # Install OpenClaw to DigitalOcean

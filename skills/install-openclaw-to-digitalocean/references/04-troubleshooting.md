@@ -132,6 +132,41 @@ ssh openclaw@$IP "openclaw sessions reset --channel telegram --to <chat_id>"
 
 ---
 
+## §4.5. Debugging gotchas (read before you panic — these are NOT failures)
+
+The wizard avoids both of these by construction (it always SSHes as `openclaw@$IP`, and it reads the structured `/var/lib/openclaw-bootstrap-done` marker rather than scanning the log for the word "error"). They bite a **human** who debugs the box manually — so they're documented here, not as bugs.
+
+### §4.5a. `systemctl --user` via `ssh root@` fails with "Failed to connect to bus"
+
+**Symptom.** You SSH in as `root` (or `sudo`/`runuser` into the user), run `systemctl --user status openclaw-gateway`, and get `Failed to connect to bus: No such file or directory`.
+
+**Cause.** The user systemd instance needs `XDG_RUNTIME_DIR` pointing at the user's runtime dir, which is set up automatically only when you log in **as that user** (a real login session). Jumping in as root and `runuser`-ing across does not create the session bus env.
+
+**Fix — two options:**
+
+```bash
+# Preferred: just connect as the openclaw user — the user bus comes up on login.
+ssh openclaw@$IP 'systemctl --user status openclaw-gateway'
+
+# If you must operate from a root shell, export the runtime dir explicitly:
+ssh root@$IP 'runuser -l openclaw -c "XDG_RUNTIME_DIR=/run/user/$(id -u openclaw) systemctl --user status openclaw-gateway"'
+```
+
+The cloud-init's phase 6 sets `XDG_RUNTIME_DIR` for exactly this reason when it enables the service at boot. All of the wizard's post-boot steps use `ssh openclaw@$IP`, so they never hit this.
+
+### §4.5b. Benign installer warnings in the bootstrap log
+
+`ceo-ai-os/openclaw/install.sh` (run in cloud-init phase 4) prints lines that **look** like errors but are harmless on a headless, freshly-provisioned VM — the install still succeeds:
+
+| Log line | Meaning | Action |
+|---|---|---|
+| `timed out during installer finalization probe: openclaw daemon status --json` | The installer probed for an already-running daemon; there isn't one yet because the wizard starts the gateway itself in phase 6. | None — ignore. |
+| `No TTY; run openclaw onboard to finish setup` | The installer noticed it's non-interactive and is nudging a human to onboard. The wizard does onboarding/config non-interactively in phase 5. | None — ignore. |
+
+Don't treat either as a bootstrap failure. The only authoritative success signal is the `/var/lib/openclaw-bootstrap-done` marker file (written only after `/health` returns 200) — check that, not a `grep -i error` over the log.
+
+---
+
 ## §5. SSH `Permission denied (publickey)`
 
 **Causes:** wrong username (it's `openclaw`, not `root`/`ubuntu`), wrong key, or the firewall doesn't include your current IP.

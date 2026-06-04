@@ -23,6 +23,19 @@ customizations:
   - references/05 covers the DO Marketplace 1-Click image (and why automation
     skips it) + a simplified workshop shared-token mode — no SA-key bundle
     pipeline like YC's prepare-yc-workshop is needed.
+  - v0.1.1 (field-test fixes after a real manual DO install run):
+    * cloud-init phase 5: `openclaw onboard --no-prompt` was a silent no-op on
+      current CLIs (Commander swallows the unknown flag). Real non-interactive
+      mode is `--non-interactive --accept-risk` (confirmed in openclaw CHANGELOG:
+      "require --accept-risk for --non-interactive"). Now tries the correct flags
+      first, falls back to `--no-prompt` for older builds.
+    * troubleshooting §4.5a: document the `systemctl --user` "Failed to connect
+      to bus" trap when debugging via `ssh root@` without XDG_RUNTIME_DIR.
+    * troubleshooting §4.5b: flag the benign install.sh warnings ("timed out
+      during installer finalization probe", "No TTY; run openclaw onboard") so a
+      human reading the bootstrap log doesn't mistake them for failures.
+    NOTE: the onboard-flag fix (A3) also applies to install-openclaw-to-yc and
+    install-openclaw-to-hetzner — same `--no-prompt` line. Not yet ported there.
 notes: |
   Wizard skill (for a code agent: Claude Code / Codex / Cursor / OpenClaw) that
   takes a non-DevOps user from zero to a working OpenClaw bot on a fresh
