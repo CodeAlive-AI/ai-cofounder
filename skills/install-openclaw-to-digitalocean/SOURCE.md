@@ -36,6 +36,14 @@ customizations:
       human reading the bootstrap log doesn't mistake them for failures.
     NOTE: the onboard-flag fix (A3) also applies to install-openclaw-to-yc and
     install-openclaw-to-hetzner — same `--no-prompt` line. Not yet ported there.
+  - v0.1.2: removed SSH rate-limiting (ufw `allow` instead of `limit`; raised
+    MaxStartups 10:30:60 → 100:30:200 and MaxSessions 4 → 50) and the per-IP
+    firewall lock (SSH now open to 0.0.0.0/0 + ::/0, dropped the MY_IP/ipify
+    detection and SSH_CIDR logic) so an automation AI agent making frequent SSH
+    calls from dynamic IPs is never throttled or banned; key-only auth + fail2ban
+    remain the controls (fail2ban bans only on FAILED auths, never an
+    authenticated key user). Touched cloud-init.yaml, SKILL.md, references/02,
+    references/04.
 notes: |
   Wizard skill (for a code agent: Claude Code / Codex / Cursor / OpenClaw) that
   takes a non-DevOps user from zero to a working OpenClaw bot on a fresh

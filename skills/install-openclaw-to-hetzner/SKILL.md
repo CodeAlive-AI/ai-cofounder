@@ -25,7 +25,7 @@ description: >-
   useful from message one.
 license: MIT
 metadata:
-  version: 0.1.0
+  version: 0.1.1
 ---
 
 # Install OpenClaw to Hetzner Cloud
@@ -53,7 +53,7 @@ These are the things the wizard has been observed asking by mistake. Don't:
 |---|---|---|
 | **Telegram chat_id** | Auto-detected in Step 4 from `getUpdates` after the user presses `/start`. Asking for it makes the user open `@userinfobot`, copy a number, paste — pure friction. | Poll `https://api.telegram.org/bot<TOKEN>/getUpdates` every 2s in Step 4. Pluck `result[0].message.chat.id`. |
 | **Server name** | Default is `openclaw-bot`. If taken, append `-<random4>`. | Set silently. Tell user the name only in the final summary. |
-| **SSH IP restriction** | Default is "current laptop IP, lock SSH to it". Detected via `curl https://api.ipify.org`. Fallback `0.0.0.0/0` + fail2ban if detection fails. | Set silently. |
+| **SSH IP restriction** | There is none. SSH is open to `0.0.0.0/0` + `::/0` — no per-IP lock — because user/agent IPs are dynamic and an automation AI agent making frequent SSH calls must not be IP-banned. Security control is key-only auth + fail2ban (bans only repeated FAILED auths). | Open SSH to all silently; don't detect or ask for an IP. |
 | **Location / image / server type** | Defaults: `fsn1` (Falkenstein), `ubuntu-24.04`, `cax11` (ARM 2 vCPU / 4 GB / 40 GB). | Don't surface to user unless they ask "in what region?". |
 | **Linux username on the VM** | Always `openclaw`. | Use it without asking. |
 | **Anthropic / OpenRouter / OpenAI billing balance** | Caught upfront in Step 1 by a probe call. If insufficient, fail fast with a one-line message — don't ask "are you sure you topped up?". | Probe call before VM create. |
@@ -104,7 +104,7 @@ Everything below is decided **without asking the user**:
 | Public IP | yes, IPv4 + IPv6 (+€0.50/mo for IPv4) | Simplest path for SSH from anywhere. |
 | Linux user | `openclaw` (sudo, no password) | Created by cloud-init. |
 | SSH key | `~/.ssh/id_ed25519.pub` (or auto-generate if missing) | `ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N ""` if absent. Uploaded to the active Hetzner project as `openclaw-install-<hostname>-<date>`. |
-| Firewall ingress | `<current public IP>/32` on port 22, ICMP from anywhere | `curl -s https://api.ipify.org`. If you can't reach ipify, fall back to `0.0.0.0/0` ingress on port 22 + fail2ban defense. |
+| Firewall ingress | port 22 open to `0.0.0.0/0` + `::/0` (no per-IP lock, no rate-limit), ICMP from anywhere | SSH is intentionally open to all because users/automation have dynamic IPs and a frequent-connecting AI agent must not be IP-banned. Security control is key-only auth + fail2ban (bans only repeated FAILED auths). |
 | Outbound | open to anywhere | Hetzner firewall default-allows outbound; we add no egress rules. OpenClaw needs Anthropic, Telegram, OpenAI, OpenRouter, npm, GitHub, etc. — locking down by domain is fragile. |
 | Telegram chat_id | **auto-detected** after first `/start` | Poll `https://api.telegram.org/bot<TOKEN>/getUpdates`. Never asked. |
 | Primary model | Depends on chosen LLM option, see table below | |
@@ -278,15 +278,7 @@ fi
 
 Note: Hetzner stores the SHA256 fingerprint in MD5 colon-format internally; the regex grep above tolerates both representations. If a future `hcloud` CLI version adds `--fingerprint`, switch to it.
 
-**b. Detect the caller's public IP** (for the SSH ingress rule):
-
-```bash
-MY_IP=$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null \
-  || curl -fsS --max-time 5 https://icanhazip.com 2>/dev/null \
-  || echo "")  # empty → fall back to 0.0.0.0/0 (fail2ban catches the rest)
-```
-
-**c. Render the cloud-init file.** Substitute these placeholders (no `TELEGRAM_CHAT_ID` — it's auto-detected in Step 4):
+**b. Render the cloud-init file.** Substitute these placeholders (no `TELEGRAM_CHAT_ID` — it's auto-detected in Step 4):
 
 - `{{TELEGRAM_BOT_TOKEN}}` — from Step 1.
 - `{{SSH_PUBLIC_KEY}}` — content of `~/.ssh/id_ed25519.pub`.
@@ -301,14 +293,13 @@ MY_IP=$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null \
 
 Write to `/tmp/openclaw-cloud-init.yaml` with mode 600. Verify the resulting file is ≤ 32 KiB (Hetzner cloud-init limit); if larger after substitution, abort with a clear message — the wizard should not silently truncate.
 
-**d. Create the Hetzner firewall.**
+**c. Create the Hetzner firewall.**
 
-Hetzner firewalls default-DENY inbound when applied with no inbound rules and default-ALLOW all outbound. We add exactly two inbound rules — SSH (locked to the caller's IP) and ICMP (for diagnostics). No outbound rules.
+Hetzner firewalls default-DENY inbound when applied with no inbound rules and default-ALLOW all outbound. We add exactly two inbound rules — SSH and ICMP (for diagnostics). No outbound rules.
+
+SSH is intentionally open to all (`0.0.0.0/0` + `::/0`): users and the automation AI agent connect from dynamic IPs, and an agent making frequent SSH calls must never be IP-banned or rate-limited. The security controls are key-only auth + fail2ban (which bans only on repeated FAILED auths, never an authenticated key user).
 
 ```bash
-SSH_CIDR="${MY_IP:+${MY_IP}/32}"
-SSH_CIDR="${SSH_CIDR:-0.0.0.0/0}"   # fallback when ipify is unreachable
-
 FW_NAME="${SERVER_NAME}-fw"
 
 # Idempotent: delete a leftover firewall with the same name from a prior failed run
@@ -316,10 +307,11 @@ hcloud firewall describe "$FW_NAME" >/dev/null 2>&1 && hcloud firewall delete "$
 
 hcloud firewall create --name "$FW_NAME" >/dev/null
 
+# SSH open to all — no per-IP lock (dynamic IPs), no rate-limit (frequent agent connects).
 hcloud firewall add-rule "$FW_NAME" \
   --direction in --protocol tcp --port 22 \
-  --source-ips "$SSH_CIDR" \
-  --description "SSH from operator laptop" >/dev/null
+  --source-ips 0.0.0.0/0 --source-ips ::/0 \
+  --description "SSH (open — key-only auth + fail2ban are the controls)" >/dev/null
 
 # ICMP — convenient for the user to ping the server during diagnostics.
 hcloud firewall add-rule "$FW_NAME" \
@@ -328,9 +320,7 @@ hcloud firewall add-rule "$FW_NAME" \
   --description "ICMP in" >/dev/null
 ```
 
-If `MY_IP` ended up empty, mention it once to the user in plain language ("Не смог определить твой IP, открыл SSH миру — fail2ban на VM защитит от перебора"). Don't ask for confirmation; the alternative is the user having no SSH at all.
-
-**e. Create the server.** Try `cax11` first; fall back to `cx22` if Hetzner returns `resource_unavailable` (ARM type sold out in `fsn1`).
+**d. Create the server.** Try `cax11` first; fall back to `cx22` if Hetzner returns `resource_unavailable` (ARM type sold out in `fsn1`).
 
 ```bash
 SERVER_TYPE=cax11
@@ -607,7 +597,7 @@ Hand-off payload (everything the onboarding skill needs):
 
 | Variable | Source in this wizard |
 |---|---|
-| `IP` | Step 2e (parsed from `hcloud server create` JSON output) |
+| `IP` | Step 2d (parsed from `hcloud server create` JSON output) |
 | `CHAT_ID` | Step 4 (auto-detected from `getUpdates`) |
 | `BOT_TOKEN` | Step 1 (Telegram token the user pasted) |
 | `USER_LANGUAGE` | Step 0 (detected from user's first messages) |
@@ -678,7 +668,7 @@ These are the things the wizard fixes on its own if it sees them during the run.
 | `hcloud context openclaw-install` already exists but doesn't work | Probe with `hcloud server list`. If 401, ask for a fresh token; if 403, ask the user to regenerate with Read & Write. |
 | `~/.ssh/id_ed25519.pub` missing | Generate a new one with no passphrase. |
 | SSH key with the same fingerprint already uploaded to the project | Reuse it (don't re-upload — Hetzner rejects duplicate names; we look up by fingerprint). |
-| Caller IP can't be detected | Fall back to `0.0.0.0/0` SSH ingress with fail2ban defense (one-line note to user). |
+| (Caller IP detection — N/A) | SSH is always open to `0.0.0.0/0` + `::/0` by design; there's no caller IP to detect, so nothing can fail here. Key-only auth + fail2ban are the controls. |
 | Firewall `openclaw-bot-fw` already exists from prior failed run | Delete and recreate (firewall has no stateful resources to lose). |
 | `cax11` returns `server_type_unavailable` / `resource_unavailable` | Retry once with `cx22` (x86, same shape, same price). |
 | `npm install -g openclaw` failed once | Retry once after 30 seconds. If still fails, escalate. |

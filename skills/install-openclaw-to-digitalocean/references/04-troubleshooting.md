@@ -169,18 +169,14 @@ Don't treat either as a bootstrap failure. The only authoritative success signal
 
 ## §5. SSH `Permission denied (publickey)`
 
-**Causes:** wrong username (it's `openclaw`, not `root`/`ubuntu`), wrong key, or the firewall doesn't include your current IP.
+**Causes:** wrong username (it's `openclaw`, not `root`/`ubuntu`), or wrong key. The firewall is **not** a cause — SSH is open to all (`0.0.0.0/0` + `::/0`, no per-IP lock), so a "wrong current IP" can never produce this. SSH also carries no rate limit (ufw `allow`, not `limit`), so frequent connects from an automation agent are not a lockout cause either.
 
 ```bash
 ssh -v openclaw@$IP 2>&1 | head -20                 # confirm it's offering the right key
-# Firewall includes your IP?
-FW=$(doctl compute firewall list --context openclaw --format ID,Name --no-header | awk '$2=="openclaw-bot-fw"{print $1}')
-doctl compute firewall get "$FW" --context openclaw --format InboundRules
-MY_IP=$(curl -s https://api.ipify.org)
-doctl compute firewall add-rules "$FW" --context openclaw --inbound-rules "protocol:tcp,ports:22,address:${MY_IP}/32"
+ssh openclaw@$IP                                    # username must be openclaw, not root/ubuntu
 ```
 
-Locked out at the host level (fail2ban / broken sshd drop-in)? Use the **Recovery Console**: DO dashboard → Droplet → Access → Launch Recovery Console → `fail2ban-client unban --all` or `rm /etc/ssh/sshd_config.d/99-openclaw-hardening.conf && systemctl reload ssh`.
+Locked out at the host level (fail2ban after repeated FAILED auths, or a broken sshd drop-in)? Use the **Recovery Console**: DO dashboard → Droplet → Access → Launch Recovery Console → `fail2ban-client unban --all` or `rm /etc/ssh/sshd_config.d/99-openclaw-hardening.conf && systemctl reload ssh`. (Note: fail2ban only bans on FAILED auths — a working key never triggers it.)
 
 **Last resort — recreate.** Only with explicit consent (wipes the bot's memory). For a Droplet in its first hour, often faster than spelunking the console.
 

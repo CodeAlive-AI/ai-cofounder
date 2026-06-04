@@ -26,7 +26,7 @@ description: >-
   message one.
 license: MIT
 metadata:
-  version: 0.9.0
+  version: 0.9.1
 ---
 
 # Install OpenClaw to Yandex Cloud (Kazakhstan)
@@ -53,7 +53,7 @@ These are the things the wizard has been observed asking by mistake. Don't:
 |---|---|---|
 | **Telegram chat_id** | Auto-detected in Step 4 from `getUpdates` after the user presses `/start`. Asking for it makes the user open `@userinfobot`, copy a number, paste — pure friction. | Poll `https://api.telegram.org/bot<TOKEN>/getUpdates` every 2s in Step 4. Pluck `result[0].message.chat.id`. |
 | **VM name** | Default is `openclaw-bot`. If taken, append `-<random4>`. | Set silently. Tell user the name only in the final summary. |
-| **SSH IP restriction** | Default is "current laptop IP, lock SSH to it". Detected via `curl https://api.ipify.org`. Fallback `0.0.0.0/0` + fail2ban if detection fails. | Set silently. |
+| **SSH IP restriction** | There is none — SSH ingress is always open to `0.0.0.0/0`. User and the managing automation agent both have dynamic IPs, and an automation agent making frequent SSH calls must never be IP-banned. Security = key-only auth + fail2ban (bans only on FAILED auth). | Open `0.0.0.0/0` silently. |
 | **Zone / region / subnet / image / VM shape** | All hard-coded for YC Kazakhstan (kz1-a, ubuntu-2404-lts, standard-v3, 2 vCPU / 4 GB / 30 GB). | Don't surface to user. |
 | **Linux username on the VM** | Always `openclaw`. | Use it without asking. |
 | **Anthropic / OpenRouter / OpenAI billing balance** | Caught upfront in Step 1 by a probe call. If insufficient, fail fast with a one-line message — don't ask "are you sure you topped up?". | Probe call before VM create. |
@@ -119,7 +119,7 @@ Everything below is decided **without asking the user**:
 | Public IP | yes, ephemeral IPv4 NAT | Simplest path for SSH from anywhere. |
 | Linux user | `openclaw` (sudo, no password) | Created by cloud-init. |
 | SSH key | `~/.ssh/id_ed25519.pub` (or auto-generate if missing) | `ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N ""` if absent. |
-| SSH ingress | `<current public IP>/32` | `curl -s https://api.ipify.org`. If you can't reach ipify, fall back to `0.0.0.0/0` + fail2ban defense. |
+| SSH ingress | `0.0.0.0/0` (open, no per-IP lock) | User/agent IPs are dynamic and the managing automation agent must not be IP-banned. Security is key-only auth + fail2ban (bans only on FAILED auth). |
 | Outbound | open to anywhere | OpenClaw needs Anthropic, Telegram, OpenAI, OpenRouter, etc. — locking down by domain is fragile. |
 | Telegram chat_id | **auto-detected** after first `/start` | Poll `https://api.telegram.org/bot<TOKEN>/getUpdates`. Never asked. |
 | Primary model | Depends on chosen LLM option, see table below | |
@@ -395,15 +395,7 @@ fi
 
 Don't mention any of this to the user unless it errors — these are quiet idempotent ops.
 
-**b. Detect the caller's public IP** (for the SSH ingress rule):
-
-```bash
-MY_IP=$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null \
-  || curl -fsS --max-time 5 https://icanhazip.com 2>/dev/null \
-  || echo "")  # empty → fall back to 0.0.0.0/0 (fail2ban catches the rest)
-```
-
-**c. Render the cloud-init file.** Substitute these placeholders (no `TELEGRAM_CHAT_ID` — it's auto-detected in Step 4):
+**b. Render the cloud-init file.** Substitute these placeholders (no `TELEGRAM_CHAT_ID` — it's auto-detected in Step 4):
 
 - `{{TELEGRAM_BOT_TOKEN}}` — from Step 1.
 - `{{SSH_PUBLIC_KEY}}` — content of `~/.ssh/id_ed25519.pub`.
@@ -417,23 +409,22 @@ MY_IP=$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null \
 
 Write to `/tmp/openclaw-cloud-init.yaml` with mode 600.
 
-**d. Create the security group:**
+**c. Create the security group:**
+
+SSH ingress is opened to everyone (`0.0.0.0/0`) on purpose — the user and the automation AI agent that manages this box both have dynamic IPs, so per-IP locking would lock out legitimate access and is not worth maintaining. The security controls are key-only auth + fail2ban (which bans only on FAILED auths, never an authenticated key user).
 
 ```bash
-SSH_CIDR="${MY_IP:+${MY_IP}/32}"
-SSH_CIDR="${SSH_CIDR:-0.0.0.0/0}"
-
 SG_ID=$(yc vpc security-group create \
   --name "${VM_NAME}-sg" \
   --network-id "$NETWORK_ID" \
-  --rule "direction=ingress,port=22,protocol=tcp,v4-cidrs=[${SSH_CIDR}]" \
+  --rule "direction=ingress,port=22,protocol=tcp,v4-cidrs=[0.0.0.0/0]" \
   --rule "direction=egress,from-port=0,to-port=65535,protocol=any,v4-cidrs=[0.0.0.0/0]" \
   --format json | jq -r .id)
 ```
 
 Note: use `--network-id` not `--network-name`. The named lookup fails silently in some yc CLI versions when the folder has multiple networks.
 
-**e. Create the instance.** Try `standard-v3` first (Intel Ice Lake), fall back to `standard-v2` (Cascade Lake) if v3 isn't available in this folder:
+**d. Create the instance.** Try `standard-v3` first (Intel Ice Lake), fall back to `standard-v2` (Cascade Lake) if v3 isn't available in this folder:
 
 ```bash
 PLATFORM=standard-v3
@@ -705,7 +696,7 @@ Hand-off payload (everything the onboarding skill needs):
 
 | Variable | Source in this wizard |
 |---|---|
-| `IP` | Step 2e `external_ipv4_address` |
+| `IP` | Step 2d `external_ipv4_address` |
 | `CHAT_ID` | Step 4 (auto-detected from `getUpdates`) |
 | `BOT_TOKEN` | Step 1 (Telegram token the user pasted) |
 | `USER_LANGUAGE` | Step 0 (detected from user's first messages) |
@@ -784,7 +775,7 @@ These are the things the wizard fixes on its own if it sees them during the run.
 | `--platform standard-v3` rejected as "not supported in folder" | Retry once with `--platform standard-v2`. |
 | `--network-name default` silently picks the wrong network | Always use `--network-id`/`--subnet-id` (resolved earlier), never the `-name` variant. |
 | `~/.ssh/id_ed25519.pub` missing | Generate a new one with no passphrase. |
-| Caller IP can't be detected | Fall back to `0.0.0.0/0` ingress with fail2ban defense (one-line note to user). |
+| SSH ingress | Always open to `0.0.0.0/0` — nothing to detect. User/agent IPs are dynamic and the managing automation agent must never be IP-banned; key-only auth + fail2ban are the controls. |
 | `npm install -g openclaw` failed once | Retry once after 30 seconds. If still fails, escalate. |
 | Gateway `/health` returns non-200 for first 90 seconds | Keep polling — composio plugin can take that long. Only escalate after 4 minutes. |
 | Pairing approval returns "code not found" | Wait 3 seconds, re-list pairing requests. Telegram sometimes lags. |

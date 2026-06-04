@@ -23,7 +23,7 @@ description: >-
   and write them into USER.md so the bot is useful from message one.
 license: MIT
 metadata:
-  version: 0.1.1
+  version: 0.1.2
 ---
 
 # Install OpenClaw to DigitalOcean
@@ -50,7 +50,7 @@ These rules override the rest of the document. Read them first.
 |---|---|---|
 | **Telegram chat_id** | Auto-detected in Step 4 from `getUpdates` after the user presses `/start`. Asking makes the user open `@userinfobot`, copy a number, paste — pure friction. | Poll `https://api.telegram.org/bot<TOKEN>/getUpdates` every 2s in Step 4. Pluck `result[0].message.chat.id`. |
 | **Droplet name** | Default is `openclaw-bot`. If taken, append `-<random4>`. | Set silently. Tell user the name only in the final summary. |
-| **SSH IP restriction** | Default is "current laptop IP, lock SSH to it". Detected via `curl https://api.ipify.org`. Fallback `0.0.0.0/0` + fail2ban if detection fails. | Set silently. |
+| **SSH IP restriction** | There is none. SSH is open to `0.0.0.0/0` + `::/0` (no per-IP lock) because users and the automation AI agent connect from dynamic IPs and the agent makes frequent SSH calls that must never be IP-banned. The security control is **key-only auth + fail2ban** (fail2ban bans only on FAILED auths). | Open SSH to all silently. |
 | **Region / image / Droplet size** | Defaults: `fra1` (Frankfurt — lowest latency for EU/CIS/KZ), `ubuntu-24-04-x64`, `s-2vcpu-4gb`. | Don't surface to user unless they ask. |
 | **Linux username on the Droplet** | Always `openclaw`. | Use it without asking. |
 | **Which SSH key to upload** | `~/.ssh/id_ed25519.pub`, auto-generated if missing, uploaded to the DO account idempotently by fingerprint. | Handle in Step 0f. |
@@ -70,11 +70,11 @@ Do NOT use this skill for:
 
 ## The "dangerous install" disclaimer — say this once, early
 
-OpenClaw is an agent runtime with **full shell access** on the box it runs on, it stores provider credentials in **plaintext** under `~/.openclaw/`, and the gateway executes whatever the LLM decides to run. That is the deal everywhere OpenClaw is installed — it is not specific to DigitalOcean. This wizard mitigates the blast radius (dedicated non-root user, tight SSH ingress, ufw + fail2ban, systemd sandboxing, loopback-only gateway) but it does **not** make the install "safe" in an absolute sense.
+OpenClaw is an agent runtime with **full shell access** on the box it runs on, it stores provider credentials in **plaintext** under `~/.openclaw/`, and the gateway executes whatever the LLM decides to run. That is the deal everywhere OpenClaw is installed — it is not specific to DigitalOcean. This wizard mitigates the blast radius (dedicated non-root user, key-only SSH auth + fail2ban brute-force defense, ufw, systemd sandboxing, loopback-only gateway) but it does **not** make the install "safe" in an absolute sense.
 
 Surface this **once**, in plain language, the first time you create real infrastructure (right before Step 2), then move on — don't nag:
 
-> Небольшое предупреждение: OpenClaw — это агент с полным доступом к своей VM, ключи он хранит на диске в открытом виде. Я разверну его на отдельной изолированной машине, закрою SSH на твой IP и захардижу систему — но держи на этой VM только то, что не страшно потерять. Не клади на неё доступы к проду или личные секреты. Продолжаю.
+> Небольшое предупреждение: OpenClaw — это агент с полным доступом к своей VM, ключи он хранит на диске в открытом виде. Я разверну его на отдельной изолированной машине, доступ по SSH только по ключу (паролей нет) + fail2ban против перебора, и захардижу систему — но держи на этой VM только то, что не страшно потерять. Не клади на неё доступы к проду или личные секреты. Продолжаю.
 
 Full security rationale and the threat model live in `references/02-network-and-security.md`.
 
@@ -107,7 +107,7 @@ Everything below is decided **without asking the user**:
 | Public IPv4 | yes (default on Basic Droplets) | Simplest path for SSH from anywhere. |
 | Linux user | `openclaw` (sudo, no password) | Created by cloud-init. |
 | SSH key | `~/.ssh/id_ed25519.pub` (auto-generate if missing), uploaded to the DO account | `ssh-keygen -t ed25519 …` if absent; `doctl compute ssh-key import` (idempotent by fingerprint). |
-| Firewall SSH ingress | `<current public IP>/32` | `curl -s https://api.ipify.org`. Fallback `0.0.0.0/0` + fail2ban. |
+| Firewall SSH ingress | `0.0.0.0/0` + `::/0` (open, no per-IP lock) | Users / automation agent have dynamic IPs and the agent SSHes frequently — IP-locking would break it. Controls are key-only auth + fail2ban. |
 | Outbound | open to anywhere | OpenClaw needs Anthropic, Telegram, OpenAI, OpenRouter, GitHub, npm — locking down by domain is fragile. |
 | Telegram chat_id | **auto-detected** after first `/start` | Poll `getUpdates`. Never asked. |
 | Primary / fallback models | Depends on chosen LLM option (table below) | |
@@ -278,14 +278,7 @@ esac
 
 Show the one-time "dangerous install" disclaimer (above) now, then proceed silently.
 
-**a. Detect the caller's public IP** (for the firewall SSH ingress rule):
-
-```bash
-MY_IP=$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null \
-  || curl -fsS --max-time 5 https://icanhazip.com 2>/dev/null || echo "")
-```
-
-**b. Render the cloud-init file.** Substitute these placeholders (no `TELEGRAM_CHAT_ID` — auto-detected in Step 4):
+**a. Render the cloud-init file.** Substitute these placeholders (no `TELEGRAM_CHAT_ID` — auto-detected in Step 4):
 
 - `{{SSH_PUBLIC_KEY}}` — content of `~/.ssh/id_ed25519.pub`.
 - `{{TELEGRAM_BOT_TOKEN}}` — from Step 1.
@@ -300,7 +293,7 @@ MY_IP=$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null \
 
 Write to `/tmp/openclaw-cloud-init.yaml` with mode 600.
 
-**c. Create the Droplet.** `--wait` blocks until it's active, then we read the public IP. Try `fra1`; if the size/region pairing is unavailable, fall back to `ams3`.
+**b. Create the Droplet.** `--wait` blocks until it's active, then we read the public IP. Try `fra1`; if the size/region pairing is unavailable, fall back to `ams3`.
 
 ```bash
 DROPLET_ID=$(doctl compute droplet create "$VM_NAME" \
@@ -330,14 +323,12 @@ IP=$(doctl compute droplet get "$DROPLET_ID" $DOCTL_CTX --format PublicIPv4 --no
 
 If the create errors with `you are not authorized` or a payment message — that's the billing case Step 0c should have caught; surface it: "Похоже, к аккаунту DigitalOcean не привязана карта. Открой cloud.digitalocean.com/account/billing, добавь способ оплаты и запусти меня снова." Stop.
 
-**d. Create + attach the Cloud Firewall.** DigitalOcean firewalls are a separate resource attached by Droplet ID. Default-deny inbound except SSH from the caller's IP; allow all outbound.
+**c. Create + attach the Cloud Firewall.** DigitalOcean firewalls are a separate resource attached by Droplet ID. Default-deny inbound except SSH; allow all outbound. SSH is intentionally open to all (`0.0.0.0/0` + `::/0`, no per-IP lock) because users and the automation AI agent connect from dynamic IPs and the agent makes frequent SSH calls that must never be IP-banned or throttled. The security controls are **key-only auth + fail2ban** (fail2ban bans only on FAILED auths, never an authenticated key user).
 
 ```bash
-SSH_CIDR="${MY_IP:+${MY_IP}/32}"; SSH_CIDR="${SSH_CIDR:-0.0.0.0/0}"
-
 doctl compute firewall create \
   --name "${VM_NAME}-fw" \
-  --inbound-rules "protocol:tcp,ports:22,address:${SSH_CIDR}" \
+  --inbound-rules "protocol:tcp,ports:22,address:0.0.0.0/0,address:::/0" \
   --outbound-rules "protocol:tcp,ports:all,address:0.0.0.0/0,address:::/0 protocol:udp,ports:all,address:0.0.0.0/0,address:::/0 protocol:icmp,address:0.0.0.0/0,address:::/0" \
   --droplet-ids "$DROPLET_ID" \
   $DOCTL_CTX --format ID --no-header
@@ -526,7 +517,7 @@ Hand-off payload:
 
 | Variable | Source |
 |---|---|
-| `IP` | Step 2c |
+| `IP` | Step 2b |
 | `CHAT_ID` | Step 4 |
 | `BOT_TOKEN` | Step 1 |
 | `USER_LANGUAGE` | Step 0 |
@@ -587,7 +578,7 @@ If the verification ping doesn't get a reply within 60s, run `references/04-trou
 | `~/.ssh/id_ed25519.pub` missing | Generate a new one with no passphrase. |
 | SSH key not yet in the DO account | `doctl compute ssh-key import`; if "already in use", reuse the fingerprint from `ssh-key list`. |
 | `droplet create` fails with region/size unavailable | Retry once in `ams3`. |
-| Caller IP can't be detected | Firewall ingress `0.0.0.0/0` + rely on ufw + fail2ban (one-line note to user). |
+| (SSH IP detection no longer needed) | Firewall ingress is always `0.0.0.0/0` + `::/0` — SSH is intentionally open to all so the automation agent on a dynamic IP is never IP-banned; key-only auth + fail2ban are the controls. Nothing to detect. |
 | `npm install -g openclaw` failed once | Retry once after 30s. If still fails, escalate. |
 | Gateway `/health` non-200 for first 90s | Keep polling — plugins can take that long. Escalate only after 4 minutes. |
 | Pairing approval returns "code not found" | Wait 3s, re-list. Telegram sometimes lags. |

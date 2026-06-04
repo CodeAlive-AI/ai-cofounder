@@ -69,8 +69,11 @@ write_files:
       # --- Session limits & timeouts ---
       ClientAliveInterval 60
       ClientAliveCountMax 3
-      MaxSessions 4
-      MaxStartups 10:30:60
+      # MaxSessions/MaxStartups raised high on purpose: an automation AI agent
+      # manages this box and makes many concurrent, already-authenticated SSH
+      # connections. These limits must never throttle it pre-auth.
+      MaxSessions 50
+      MaxStartups 100:30:200
 
       # --- Forwarding / tunneling (defense in depth — none of these are
       #     needed by OpenClaw, and turning them off limits blast-radius if
@@ -99,6 +102,13 @@ write_files:
   # fail2ban — escalating ban on SSH brute force.
   # Reads sshd events from systemd journal (Ubuntu 24.04 default).
   #
+  # IMPORTANT: fail2ban bans ONLY on repeated FAILED authentications. A user (or
+  # the automation AI agent that manages this box) connecting with a valid SSH
+  # key never fails auth, so frequent legitimate SSH is NEVER rate-limited or
+  # banned by fail2ban. This is exactly why we dropped the ufw rate-limit and the
+  # per-IP ingress lock and rely on fail2ban instead — it punishes brute force,
+  # not high-frequency authenticated traffic.
+  #
   # Tuned for a single non-DevOps user: forgiving on first mistakes
   # (5 retries before any ban, 1h initial bantime, 24h cap) but still
   # blocks sustained brute force. The aggressive [recidive] jail is
@@ -113,8 +123,9 @@ write_files:
       findtime = 10m
       maxretry = 6
       banaction = ufw
-      # Loopback/link-local always ignored. ufw + tight ingress means
-      # the user's own laptop IP is already the only allowed source.
+      # Loopback/link-local always ignored. SSH ingress is open (0.0.0.0/0) so
+      # fail2ban is the brute-force control — but it only acts on FAILED auths,
+      # never on a key-authenticated user or the automation agent.
       ignoreself = true
       ignoreip   = 127.0.0.1/8 ::1
       # Recidivism: each repeat ban gets multiplied (2 × previous), capped at 24h.
@@ -263,13 +274,14 @@ write_files:
 
       phase "1/8 Firewall + SSH hardening + auto-updates"
       # ufw — default-deny ingress, allow everything out (OpenClaw needs
-      # to talk to many SaaS APIs). `limit` rate-caps SSH (6 conn / 30s)
-      # before traffic even reaches sshd — this is a strict superset of
-      # fail2ban's protection.
+      # to talk to many SaaS APIs). SSH is `allow` (NOT `limit`): an automation
+      # AI agent manages this box and makes frequent legitimate connects, so any
+      # connection rate-limit would drop its already-authenticated sessions.
+      # Key-only auth + fail2ban (bans only on FAILED auth) are the controls.
       ufw --force reset
       ufw default deny incoming
       ufw default allow outgoing
-      ufw limit 22/tcp comment 'SSH (rate-limited)'
+      ufw allow 22/tcp comment 'SSH (open, no rate-limit — automation agent needs frequent connects; key-only auth is the control)'
       ufw logging low
       ufw --force enable
 

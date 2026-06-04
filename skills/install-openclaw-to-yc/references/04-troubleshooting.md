@@ -256,7 +256,8 @@ ssh openclaw@$IP "openclaw sessions reset --channel telegram --to <chat_id>"
 
 1. Wrong username — the cloud-init creates `openclaw`, not `ubuntu` or `yc-user`.
 2. Wrong key — VM was created with a different SSH key than the user is currently presenting.
-3. Security group ingress doesn't include the user's current IP.
+
+(A wrong source IP is **not** a possible cause: SSH ingress is open to `0.0.0.0/0`, so the security group never blocks a connection by IP. `Permission denied (publickey)` is always a username or key problem, never a firewall one.)
 
 **Fix.**
 
@@ -266,13 +267,6 @@ ssh -v openclaw@$IP 2>&1 | head -20
 
 # 2. List keys on the VM (use serial console if locked out)
 yc compute instance get-serial-port-output openclaw-bot --port 1 | grep -A2 "ssh-keys" | head -10
-
-# 3. Check security group
-yc vpc security-group get openclaw-bot-sg --format json | jq '.rules[] | select(.direction=="INGRESS")'
-# If 22/tcp source CIDR doesn't include your current IP, update:
-MY_IP=$(curl -s https://api.ipify.org)
-yc vpc security-group update-rules openclaw-bot-sg \
-  --add-rule "direction=ingress,port=22,protocol=tcp,v4-cidrs=[$MY_IP/32]"
 ```
 
 **Last resort — recreate the VM.** Only do this with explicit user consent (it wipes the bot's memory). For a workshop bot in its first hour, it's usually faster than spelunking serial console.

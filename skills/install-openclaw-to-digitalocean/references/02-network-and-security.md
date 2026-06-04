@@ -22,42 +22,30 @@ This is the same risk profile as the Yandex Cloud sibling skill and as a local O
 
 ## Why a public IP (and not a private-only Droplet)
 
-A private-only Droplet (DO's 2026 VPC-only feature, `--enable-public-networking=false`) has no inbound path for SSH — you'd need a bastion/jump Droplet or a VPN. For a single non-DevOps user that's more moving parts than security. A public IP with a Cloud Firewall locked to one `/32` is the right trade-off.
+A private-only Droplet (DO's 2026 VPC-only feature, `--enable-public-networking=false`) has no inbound path for SSH — you'd need a bastion/jump Droplet or a VPN. For a single non-DevOps user that's more moving parts than security. A public IP with a Cloud Firewall (SSH open to all, but key-only auth + fail2ban as the controls) is the right trade-off.
 
 A public IPv4 is included in the Droplet price on DO (no separate hourly charge like some clouds), so there's no cost argument against it either.
 
-## Why SSH default is "this machine's IP only"
+## Why SSH default is open to all (no per-IP lock)
 
-The wizard detects the user's current public IP (`curl -s https://api.ipify.org`) and opens port 22 only to that `/32` via the Cloud Firewall. Much safer than `0.0.0.0/0` for a fresh key.
+The wizard opens port 22 to everyone (`0.0.0.0/0` + `::/0`) via the Cloud Firewall. It does **not** lock SSH to any single IP. Two reasons:
 
-When the user's IP changes (home ↔ office ↔ café), they must update the firewall:
+1. **Dynamic IPs.** Users (and the automation AI agent that deploys and maintains the bot) connect from IPs that change — home ↔ office ↔ café, mobile networks, CI runners. A `/32` lock breaks the moment the IP changes, and a non-DevOps user can't easily fix it.
+2. **The automation agent must never be IP-banned or throttled.** Deployment and ongoing work is driven by an AI agent that makes frequent, already-authenticated SSH calls. Locking SSH to one IP — or rate-limiting it — would drop those legitimate connections.
 
-```bash
-FW=$(doctl compute firewall list --context openclaw --format ID,Name --no-header | awk '$2=="openclaw-bot-fw"{print $1}')
-NEW_IP=$(curl -s https://api.ipify.org)
-doctl compute firewall add-rules "$FW" --context openclaw \
-  --inbound-rules "protocol:tcp,ports:22,address:${NEW_IP}/32"
-# (optionally remove the old rule)
-doctl compute firewall remove-rules "$FW" --context openclaw \
-  --inbound-rules "protocol:tcp,ports:22,address:<OLD_IP>/32"
-```
+The security model therefore rests on two controls that don't care about source IP:
 
-If the user objects ("I roam a lot, just open it"), let them pick:
+- **Key-only auth** — `PasswordAuthentication no`, `AuthenticationMethods publickey`, `PermitRootLogin no`, `AllowUsers openclaw`. An open port 22 with no password path is not a meaningful attack surface for scanners.
+- **fail2ban** — bans brute-forcers, but **only on repeated FAILED authentications**. A key-authenticated user or the automation agent never fails auth, so it is never rate-limited or banned. This is the whole point: brute force is stopped without ever penalising a successful key login.
 
-| Choice | What we do |
-|---|---|
-| Lock to my IP (recommended) | inbound 22/tcp from `<MY_IP>/32` |
-| Open to the world | inbound 22/tcp from `0.0.0.0/0` + `::/0`. fail2ban + key-only auth handle 99% of scanners. |
-| Lock to my office subnet | inbound 22/tcp from `<CIDR>` (user provides) |
-
-Pick option 2 only if the user explicitly accepts the trade-off.
+A user who *does* want to restrict access by IP/CIDR can edit the firewall (replace the `0.0.0.0/0,::/0` inbound rule with their `<CIDR>`), but the default is open — and an IP-locked firewall is incompatible with running the automation agent from a dynamic IP.
 
 ## Two firewalls, on purpose
 
 | Layer | Where | What it does |
 |---|---|---|
-| **DO Cloud Firewall** | DigitalOcean network edge, before packets reach the Droplet | Default-deny inbound except SSH from `<MY_IP>/32`; allow all outbound. A separate resource, attached by Droplet ID. |
-| **ufw (host)** | Inside the Droplet | Default-deny inbound, `limit 22/tcp` (rate-cap 6 conn/30s), allow all outbound. |
+| **DO Cloud Firewall** | DigitalOcean network edge, before packets reach the Droplet | Default-deny inbound except SSH open to `0.0.0.0/0` + `::/0` (no per-IP lock — see above); allow all outbound. A separate resource, attached by Droplet ID. |
+| **ufw (host)** | Inside the Droplet | Default-deny inbound, `allow 22/tcp` (no rate-limit so the automation agent's frequent connects aren't dropped), allow all outbound. |
 
 Defense in depth: if someone detaches or misconfigures the Cloud Firewall, ufw still holds; if ufw is reset, the Cloud Firewall still holds. The gateway port `18789` is opened by **neither** — it binds to loopback and is reached only over SSH.
 
@@ -71,11 +59,11 @@ Validated with `sshd -t` **before** reload (a bad config would lock us out of a 
 
 ### 2. ufw
 
-Default deny in / allow out; `limit 22/tcp` instead of `allow` to rate-cap before sshd; `logging low`.
+Default deny in / allow out; `allow 22/tcp` (**not** `limit`) — no rate-limit, so the automation agent's frequent, already-authenticated SSH connects are never dropped; `logging low`. Brute force is handled by fail2ban (below), which only ever bans on FAILED auths. The sshd drop-in also raises `MaxStartups` to `100:30:200` and `MaxSessions` to `50` so a high-frequency automation agent is never throttled pre-auth.
 
 ### 3. fail2ban
 
-`backend = systemd` (Ubuntu 24.04 logs sshd to the journal — wrong backend = jail never fires), `maxretry 5` for sshd, escalating `bantime` capped at 24h, `[recidive]` deliberately **off** (too easy to self-lock a 1-user box for a week). Recovery if you lock yourself out is via the **DigitalOcean Recovery Console** (Droplet → Access → Launch Recovery Console) — see §Recovery below.
+`backend = systemd` (Ubuntu 24.04 logs sshd to the journal — wrong backend = jail never fires), `maxretry 5` for sshd, escalating `bantime` capped at 24h, `[recidive]` deliberately **off** (too easy to self-lock a 1-user box for a week). fail2ban stays on for brute-force defense and is the reason SSH itself carries no rate limit: it bans **only on repeated FAILED authentications**, so a key-authenticated user or the automation agent — which never fails auth — is never rate-limited or banned. Recovery if you lock yourself out is via the **DigitalOcean Recovery Console** (Droplet → Access → Launch Recovery Console) — see §Recovery below.
 
 ### 4. unattended-upgrades
 

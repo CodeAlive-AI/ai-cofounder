@@ -279,11 +279,10 @@ ssh openclaw@$IP "openclaw sessions reset --channel telegram --to <chat_id>"
 
 **Symptom.** `ssh openclaw@$IP` immediately fails with key rejection.
 
-**Causes.**
+**Causes.** (Note: a wrong source IP is **never** the cause — SSH is open to `0.0.0.0/0` + `::/0`, with no per-IP firewall lock and no ufw rate-limit. Don't chase the firewall here.)
 
 1. Wrong username — the cloud-init creates `openclaw`, not `ubuntu` or `root`.
 2. Wrong key — server was created with a different SSH key than the user is currently presenting.
-3. Hetzner firewall ingress doesn't include the user's current IP.
 
 **Fix.**
 
@@ -296,17 +295,9 @@ hcloud server describe openclaw-bot -o json | jq '.server.public_net.ssh_keys //
 # Or look at what keys are in the project:
 hcloud ssh-key list
 
-# 3. Check firewall ingress for port 22
+# 3. Confirm SSH is open in the firewall (it should be 0.0.0.0/0 + ::/0).
+#    This is a sanity check, not a fix — a wrong IP is never the cause anymore.
 hcloud firewall describe openclaw-bot-fw -o json | jq '.firewall.rules[] | select(.direction=="in" and .port=="22")'
-# If your current IP isn't in source_ips:
-MY_IP=$(curl -s https://api.ipify.org)
-# Delete the old SSH rule first (rules are matched on full spec):
-hcloud firewall delete-rule openclaw-bot-fw --direction in --protocol tcp --port 22 --source-ips <old-cidr>
-# Add a new one:
-hcloud firewall add-rule openclaw-bot-fw \
-  --direction in --protocol tcp --port 22 \
-  --source-ips "$MY_IP/32" \
-  --description "SSH (updated $(date +%F))"
 ```
 
 **Last resort — Hetzner Rescue Mode** (works even with a broken SSH config):

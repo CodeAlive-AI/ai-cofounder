@@ -13,7 +13,7 @@ Hetzner Cloud has a **cloud-level firewall** that lives outside the VM. It's sta
 
 The wizard creates one firewall (`openclaw-bot-fw`) with two inbound rules:
 
-- TCP 22 from `<MY_IP>/32` (SSH from the operator laptop)
+- TCP 22 from `0.0.0.0/0` and `::/0` (SSH open to all — see "Why SSH is open to all" below)
 - ICMP from `0.0.0.0/0` and `::/0` (so the user can `ping` during diagnostics)
 
 That's it. Outbound is left at default-allow.
@@ -36,33 +36,33 @@ hcloud server create ... --without-ipv4
 
 Make them say "yes I understand SSH may break from some networks" — out of scope for this skill's default path.
 
-## Why SSH default is "this machine's IP only"
+## Why SSH is open to all (not IP-locked)
 
-The wizard's default is to detect the user's current public IP (`curl -s https://api.ipify.org`) and open port 22 only to that `/32`. This is dramatically safer than `0.0.0.0/0` for a fresh key.
+The wizard opens port 22 to `0.0.0.0/0` + `::/0` — **no per-IP restriction**. This is deliberate:
 
-When SSH is locked to one IP, **the user must update the firewall rule** if their IP changes (going home, switching networks, etc.):
+1. **Users and the automation AI agent have dynamic IPs.** Founders move between home, office, hotel Wi-Fi, mobile tethering, and VPNs. An IP-locked rule breaks SSH the moment the IP changes and forces a firewall edit from a machine that can no longer connect — a classic lock-yourself-out trap.
+2. **An AI agent that manages the box makes frequent SSH calls.** Locking to one IP (or rate-limiting connections) gets a legitimate, already-authenticated agent throttled or effectively banned. That was the real problem this posture fixes.
+
+Security does **not** rest on hiding port 22. It rests on:
+
+- **Key-only auth** (`PasswordAuthentication no`, `PubkeyAuthentication yes`, `AuthenticationMethods publickey`). A scanner that reaches port 22 with no private key gets nothing.
+- **fail2ban**, which bans an IP only after **repeated FAILED authentications**. A key-authenticated user or the automation agent never fails auth, so frequent legitimate SSH is never banned or rate-limited — only brute-forcers (who fail) get banned.
+
+There is no ufw connection rate-limit and no per-IP firewall lock; both were removed precisely so the automation agent's frequent connects are never dropped.
+
+A user who genuinely wants to restrict SSH by IP or CIDR (e.g. a static office network) can edit the firewall themselves — the default is open:
 
 ```bash
-NEW_IP=$(curl -s https://api.ipify.org)
-# Hetzner firewall rules are stateless; you replace the entire rule set
+# Optional, user-initiated only. Replaces the open rule with a CIDR lock.
 hcloud firewall delete-rule openclaw-bot-fw \
-  --direction in --protocol tcp --port 22 --source-ips <old-ip>/32
-
+  --direction in --protocol tcp --port 22 --source-ips 0.0.0.0/0 --source-ips ::/0
 hcloud firewall add-rule openclaw-bot-fw \
   --direction in --protocol tcp --port 22 \
-  --source-ips "$NEW_IP/32" \
-  --description "SSH from operator laptop (updated)"
+  --source-ips "<your-cidr>" \
+  --description "SSH restricted to my network"
 ```
 
-If the user objects ("I move around a lot, just open it"), let them pick:
-
-| Choice | What we do |
-|---|---|
-| Lock to my IP (recommended) | inbound 22/tcp from `<MY_IP>/32` |
-| Open to the world | inbound 22/tcp from `0.0.0.0/0`. fail2ban + SSH key-only auth handles 99% of script kiddies. |
-| Lock to my office subnet | inbound 22/tcp from `<CIDR>` (user provides) |
-
-Pick option 2 if and only if the user explicitly accepts the trade-off.
+But note: doing this re-introduces the dynamic-IP lockout risk and can throttle an automation agent. The default open posture is recommended.
 
 ## What `cloud-init.yaml` hardens on top of Hetzner defaults
 
@@ -82,8 +82,8 @@ Validated before `systemctl reload ssh` (a bad config would lock us out forever 
 | `MaxAuthTries` | `4` | Disconnect on the 5th try. Tuned up from CIS's `3` because non-DevOps users frequently mistype the key passphrase 2–3 times on first connect. |
 | `LoginGraceTime` | `30` | Drop slow / scanning connections fast. |
 | `AllowUsers` | `openclaw` | Only one user can log in. |
-| `MaxSessions` | `4` | One legit user shouldn't need more. |
-| `MaxStartups` | `10:30:60` | Drop unauth connections under flood. |
+| `MaxSessions` | `50` | Raised well above defaults so a high-frequency automation agent opening many concurrent SSH sessions is never throttled. |
+| `MaxStartups` | `100:30:200` | Raised so the automation agent's many concurrent pre-auth connections aren't dropped as a "flood". Key-only auth + fail2ban are the real controls. |
 | `ClientAliveInterval` / `CountMax` | `60` / `3` | Idle sessions disconnected after 3 min. |
 | `AllowTcpForwarding` | `no` | OpenClaw never tunnels TCP. |
 | `AllowAgentForwarding` | `no` | If the laptop key ever leaks **and** the user had agent-forwarding enabled, attacker could pivot to any other server in the user's SSH chain. |
@@ -106,10 +106,12 @@ The Hetzner cloud-level firewall is the first line. UFW inside the VM is the sec
 |---|---|---|
 | Default ingress | `deny` | Everything closed by default. |
 | Default egress | `allow` | OpenClaw needs to reach many SaaS APIs. |
-| Port 22 | `limit` (not `allow`) | Rate-cap 6 connections / 30s before traffic reaches sshd. |
+| Port 22 | `allow` (not `limit`) | No rate-limit, so the automation agent's frequent connects aren't dropped. ufw's `limit` (6 conn / 30s) would throttle a busy AI agent; key-only auth + fail2ban are the controls instead. |
 | Logging | `low` | One line per blocked packet, no flood. |
 
 ### 3. fail2ban (escalating ban on brute force)
+
+fail2ban stays as the brute-force defense, and it's the reason SSH can safely be open to all with no per-IP lock and no rate-limit. **fail2ban bans an IP only on repeated FAILED authentications.** A key-authenticated user — or the automation AI agent hammering the box with hundreds of legitimate connects — never fails auth, so it is never banned or rate-limited by fail2ban. Only brute-forcers, who do fail, get banned.
 
 Tuned forgiving on purpose. Recovery from a self-inflicted ban requires the Hetzner console's VNC (clunky for non-DevOps users), so we'd rather let one extra brute-force packet through than strand the founder for a week.
 
@@ -202,7 +204,6 @@ For reference if the user wants to switch to a stricter egress policy later:
 | GitHub (`github.com`, `raw.githubusercontent.com`) | 443 | ceo-ai-os clone, updates |
 | npm registry (`registry.npmjs.org`) | 443 | `npm install -g openclaw@latest` |
 | Hetzner mirror (`mirror.hetzner.com`) | 80/443 | `apt update` |
-| `api.ipify.org` / `icanhazip.com` | 443 | Public-IP discovery (one-time during install only) |
 
 Locking down outbound by port (`only 443/tcp`) works. Locking down by destination domain is unstable — Telegram cycles IP ranges, npm CDN ranges shift. Don't go there for a personal bot.
 
