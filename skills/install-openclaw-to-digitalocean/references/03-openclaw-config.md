@@ -44,7 +44,7 @@ None is hard-coded — cloud-init reads `ANTHROPIC_API_KEY` / `OPENROUTER_API_KE
 |---|---|---|---|---|
 | **A. Anthropic API key** | `sk-ant-…` | `ANTHROPIC_API_KEY` env | `anthropic/claude-sonnet-4-6` | `["anthropic/claude-haiku-4-5"]` |
 | **B. OpenRouter API key** | `sk-or-…` | `OPENROUTER_API_KEY` env | `openrouter/moonshotai/kimi-k2.6` | `["openrouter/openai/gpt-5.5","openrouter/anthropic/claude-haiku-4-5"]` |
-| **C. OpenAI Codex OAuth** | word `Codex` | profile in `~/.openclaw/agents/main/agent/auth-profiles.json` | `openai-codex/gpt-5.5` (Pro) or `gpt-4o` (Plus) | `["openai-codex/gpt-4o"]` |
+| **C. OpenAI Codex OAuth** | word `Codex` | profile `openai-codex:<email>` in `~/.openclaw/agents/main/agent/auth-profiles.json` | `openai/gpt-5.5` (Pro) or `openai/gpt-5.4` (Plus) | `["openai/gpt-5.4"]` |
 
 ### A. Anthropic API key (recommended for first-timers)
 
@@ -70,12 +70,12 @@ Wizard default `openrouter/moonshotai/kimi-k2.6` (strong long-context, cost-effe
 
 ChatGPT Plus ($20) / Pro ($200) grants access via the `openai-codex` provider, no per-token bill. Device-code OAuth — the wizard runs `openclaw models auth login --provider openai-codex --device-code` over SSH after bootstrap, the user pastes an 8-char code at https://auth.openai.com/codex/device.
 
-| Subscription | Models |
+| Subscription | Models (in the `openai/` namespace, backed by the `openai-codex` OAuth profile) |
 |---|---|
-| Plus ($20/mo) | `openai-codex/gpt-4o`, `gpt-4.5`, `o3` |
-| Pro ($200/mo) | all Plus + `gpt-5.5`, `gpt-5.5-pro`, higher limits |
+| Plus ($20/mo) | `openai/gpt-5.4`, `openai/gpt-5.4-mini` |
+| Pro ($200/mo) | all Plus + `openai/gpt-5.5`, `openai/gpt-5.5-pro`, higher limits |
 
-The wizard probes `openclaw models list --provider openai-codex` and sets primary to `gpt-5.5` if present (Pro), else `gpt-4o` (Plus).
+The wizard probes `openclaw models list --json` for `openai/gpt-5.5` and sets it primary if present (Pro), else `openai/gpt-5.4` (Plus). Note: Codex models register under `openai/*` (the `openai-codex` profile only backs auth), so `--provider openai-codex` lists nothing, and the JSON flag is `--json` not `--format json` — both verified on a live 2026.5.27 bot.
 
 **Known issue #74212 (2026-05):** SSH sessions sometimes mask the code as `[shown on the local device only]`. Use `ssh -tt`; if still masked, run the auth in a fresh interactive SSH session.
 

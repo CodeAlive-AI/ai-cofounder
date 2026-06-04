@@ -83,6 +83,18 @@ customizations:
       intact; added only a `plugins install clawhub:@openclaw/codex` fallback for
       the "No provider plugins found" edge + a do-not-rename note.
     Telegram raw-HTTP guard from the report was ignored on purpose (env-specific).
+  - v0.1.5: Codex model-id alignment, verified by READ-ONLY SSH checks on a live
+    OpenClaw 2026.5.27 bot. Codex subscription models register under the `openai/`
+    namespace (`openai/gpt-5.5`), NOT `openai-codex/*` -- the `openai-codex`
+    profile only backs the auth. So: (a) switched model ids `openai-codex/*` ->
+    `openai/*` (the legacy form works but `doctor --fix` migrates it to canonical
+    `openai/*`); (b) fixed the Step 3.5 tier probe, which was doubly broken --
+    `models list --provider openai-codex` returns NOTHING (models are in the
+    openai namespace) and the JSON flag is `--json`, not `--format json`; new
+    probe greps `models list --json` for `openai/gpt-5.5`; (c) replaced the stale
+    `gpt-4o`/`gpt-4.5`/`o3` Codex models with the current `gpt-5.4`/`gpt-5.4-mini`
+    (Plus) and `gpt-5.5`/`gpt-5.5-pro` (Pro) families. `--provider openai-codex`
+    and the `openai-codex:<email>` auth profile are unchanged.
 notes: |
   Wizard skill (for a code agent: Claude Code / Codex / Cursor / OpenClaw) that
   takes a non-DevOps user from zero to a working OpenClaw bot on a fresh

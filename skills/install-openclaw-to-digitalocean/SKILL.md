@@ -23,7 +23,7 @@ description: >-
   and write them into USER.md so the bot is useful from message one.
 license: MIT
 metadata:
-  version: 0.1.4
+  version: 0.1.5
 ---
 
 # Install OpenClaw to DigitalOcean
@@ -92,7 +92,7 @@ Full security rationale and the threat model live in `references/02-network-and-
 |---|---|---|---|
 | **A. Anthropic API key** | Key starting with `sk-ant-…` from [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys) | Prefix `sk-ant-` | ≥$5 credit on [console.anthropic.com/settings/billing](https://console.anthropic.com/settings/billing). Best raw quality. Pay-as-you-go (~$3 per million input tokens for Sonnet 4.6). |
 | **B. OpenRouter API key** | Key starting with `sk-or-…` from [openrouter.ai/keys](https://openrouter.ai/keys) | Prefix `sk-or-` | ≥$5 credit on OpenRouter. Unified access to Anthropic + OpenAI + 200 other models through one key, ~5% markup over native. |
-| **C. OpenAI Codex via ChatGPT** | The literal word `Codex` (or `codex`, `chatgpt`, `oauth`) — **not** a key | Token doesn't start with `sk-` | Active **ChatGPT Plus ($20/mo)** or **Pro ($200/mo)** subscription. After bootstrap, the wizard prompts the user once on auth.openai.com with a device code — no API key, no metered billing. Plus gives `gpt-4o`/`o3`; Pro gives `gpt-5.5`. |
+| **C. OpenAI Codex via ChatGPT** | The literal word `Codex` (or `codex`, `chatgpt`, `oauth`) — **not** a key | Token doesn't start with `sk-` | Active **ChatGPT Plus ($20/mo)** or **Pro ($200/mo)** subscription. After bootstrap, the wizard prompts the user once on auth.openai.com with a device code — no API key, no metered billing. Plus gives the `gpt-5.4` family; Pro adds `gpt-5.5`. |
 
 Order of recommendation in the prompt: **A → C → B** for first-timers.
 
@@ -118,9 +118,9 @@ Everything below is decided **without asking the user**:
 |---|---|---|
 | A. Anthropic | `anthropic/claude-sonnet-4-6` | `["anthropic/claude-haiku-4-5"]` |
 | B. OpenRouter | `openrouter/moonshotai/kimi-k2.6` | `["openrouter/openai/gpt-5.5", "openrouter/anthropic/claude-haiku-4-5"]` |
-| C. OpenAI Codex | `openai-codex/gpt-5.5` (Pro) or `openai-codex/gpt-4o` (Plus only) | `["openai-codex/gpt-4o"]` |
+| C. OpenAI Codex | `openai/gpt-5.5` (Pro) or `openai/gpt-5.4` (Plus) | `["openai/gpt-5.4"]` |
 
-For C, the wizard probes the user's subscription tier after OAuth completes — if `gpt-5.5` isn't in `openclaw models list`, fall back to `gpt-4o` as primary.
+For C, the wizard probes the subscription tier after OAuth completes — if `openai/gpt-5.5` isn't in `openclaw models list --json`, it uses `openai/gpt-5.4` as primary. (Codex models live in the `openai/` namespace, backed by the `openai-codex` OAuth profile — verified on a live 2026.5.27 bot.)
 
 ## Wizard flow
 
@@ -393,15 +393,17 @@ The SSH session blocks until the user completes the flow. When it exits 0, OpenC
 
 **Known pitfall (issue #74212, 2026-05):** in some SSH sessions OpenClaw masks the code as `[shown on the local device only]`. Retry with `ssh -tt`; if still masked, run the auth command in a fresh interactive `ssh openclaw@$IP` session, read the code there, resume.
 
-After the profile is written, probe the subscription tier and set the model:
+After the profile is written, probe the subscription tier and set the model. **Two things verified on a live OpenClaw 2026.5.27 bot:** Codex subscription models are registered in the **`openai/` namespace** (e.g. `openai/gpt-5.5`), *not* `openai-codex/*` — the `openai-codex` profile only backs the auth, so `openclaw models list --provider openai-codex` returns **nothing**; and the JSON flag for `models list` is **`--json`**, not `--format json`. So:
 
 ```bash
-HAS_GPT55=$(ssh openclaw@$IP "openclaw models list --provider openai-codex --format json" \
-  | jq -r '.[] | select(.id=="gpt-5.5") | .id // empty')
-if [[ "$HAS_GPT55" == "gpt-5.5" ]]; then
-  ssh openclaw@$IP "openclaw config set agents.defaults.model.primary 'openai-codex/gpt-5.5' && openclaw config set agents.defaults.model.fallbacks '[\"openai-codex/gpt-4o\"]'"
+HAS_GPT55=$(ssh openclaw@$IP "openclaw models list --json 2>/dev/null" \
+  | jq -r '.[]?.id // empty' 2>/dev/null | grep -Fx 'openai/gpt-5.5' || true)
+if [[ -n "$HAS_GPT55" ]]; then
+  # Pro tier — gpt-5.5 available
+  ssh openclaw@$IP "openclaw config set agents.defaults.model.primary 'openai/gpt-5.5' && openclaw config set agents.defaults.model.fallbacks '[\"openai/gpt-5.4\"]'"
 else
-  ssh openclaw@$IP "openclaw config set agents.defaults.model.primary 'openai-codex/gpt-4o' && openclaw config set agents.defaults.model.fallbacks '[]'"
+  # Plus tier (or gpt-5.5 not granted) — use the gpt-5.4 family
+  ssh openclaw@$IP "openclaw config set agents.defaults.model.primary 'openai/gpt-5.4' && openclaw config set agents.defaults.model.fallbacks '[\"openai/gpt-5.4-mini\"]'"
 fi
 ssh openclaw@$IP "sudo systemctl restart openclaw-gateway"
 ```
@@ -555,7 +557,7 @@ LLM line variants:
 |---|---|
 | anthropic | `LLM          : Anthropic Claude Sonnet 4.6 (API key, ~$3/M tokens)` |
 | openrouter | `LLM          : OpenRouter → Moonshot Kimi K2.6 (API key, +5% markup)` |
-| openai-codex | `LLM          : OpenAI Codex / gpt-5.5 (ChatGPT Pro)` or `gpt-4o (Plus)` |
+| openai-codex | `LLM          : OpenAI Codex / gpt-5.5 (ChatGPT Pro)` or `gpt-5.4 (Plus)` |
 
 ```
 Что дальше:

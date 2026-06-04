@@ -213,9 +213,9 @@ ssh openclaw@$IP 'openclaw config set agents.defaults.model.primary anthropic/cl
 # OpenRouter
 ssh openclaw@$IP 'openclaw config set agents.defaults.model.primary openrouter/moonshotai/kimi-k2.6'
 # OpenAI Codex (Pro)
-ssh openclaw@$IP 'openclaw config set agents.defaults.model.primary openai-codex/gpt-5.5'
+ssh openclaw@$IP 'openclaw config set agents.defaults.model.primary openai/gpt-5.5'
 # OpenAI Codex (Plus only)
-ssh openclaw@$IP 'openclaw config set agents.defaults.model.primary openai-codex/gpt-4o'
+ssh openclaw@$IP 'openclaw config set agents.defaults.model.primary openai/gpt-5.4'
 
 ssh openclaw@$IP 'sudo systemctl restart openclaw-gateway'
 ```

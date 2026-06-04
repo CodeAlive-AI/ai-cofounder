@@ -39,7 +39,7 @@ The wizard supports **three LLM auth methods**, picked by the user in Step 1 fro
 |---|---|---|---|---|
 | **A. Anthropic API key** | `sk-ant-…` | `ANTHROPIC_API_KEY` env | `anthropic/claude-sonnet-4-6` | `["anthropic/claude-haiku-4-5"]` |
 | **B. OpenRouter API key** | `sk-or-…` | `OPENROUTER_API_KEY` env | `openrouter/moonshotai/kimi-k2.6` | `["openrouter/openai/gpt-5.5", "openrouter/anthropic/claude-haiku-4-5"]` |
-| **C. OpenAI Codex OAuth** | word `Codex` | OAuth profile in `~/.openclaw/agents/main/agent/auth-profiles.json`, written by `openclaw models auth login --provider openai-codex --device-code` | `openai-codex/gpt-5.5` (Pro) or `openai-codex/gpt-4o` (Plus) | `["openai-codex/gpt-4o"]` |
+| **C. OpenAI Codex OAuth** | word `Codex` | OAuth profile in `~/.openclaw/agents/main/agent/auth-profiles.json`, written by `openclaw models auth login --provider openai-codex --device-code` | `openai/gpt-5.5` (Pro) or `openai/gpt-5.4` (Plus) | `["openai/gpt-5.4"]` |
 
 ### A. Anthropic API key (recommended for first-timers)
 
@@ -78,16 +78,16 @@ Model naming: `openrouter/<upstream-vendor>/<model-id>`. Examples:
 
 ### C. OpenAI Codex via ChatGPT subscription (free if you already pay)
 
-ChatGPT Plus ($20/mo) or Pro ($200/mo) grants access to GPT-4o / o3 / GPT-5.5 through OpenClaw's `openai-codex` provider, with no per-token bill. Auth is **device-code OAuth** — the wizard runs `openclaw models auth login --provider openai-codex --device-code` over SSH after VM bootstrap, the user opens https://auth.openai.com/codex/device on their phone or laptop and pastes the 8-character code.
+ChatGPT Plus ($20/mo) or Pro ($200/mo) grants access to the GPT-5.4 family (Plus) and GPT-5.5 (Pro) through OpenClaw's `openai-codex` provider, with no per-token bill. Auth is **device-code OAuth** — the wizard runs `openclaw models auth login --provider openai-codex --device-code` over SSH after VM bootstrap, the user opens https://auth.openai.com/codex/device on their phone or laptop and pastes the 8-character code.
 
 Subscription unlocks (May 2026):
 
-| Subscription | Models you can pick |
+| Subscription | Models (in the `openai/` namespace, backed by the `openai-codex` OAuth profile) |
 |---|---|
-| ChatGPT Plus ($20/mo) | `openai-codex/gpt-4o`, `openai-codex/gpt-4.5`, `openai-codex/o3` |
-| ChatGPT Pro ($200/mo) | All Plus models + `openai-codex/gpt-5.5`, `openai-codex/gpt-5.5-pro`, higher rate limits |
+| ChatGPT Plus ($20/mo) | `openai/gpt-5.4`, `openai/gpt-5.4-mini` |
+| ChatGPT Pro ($200/mo) | All Plus models + `openai/gpt-5.5`, `openai/gpt-5.5-pro`, higher rate limits |
 
-The wizard probes `openclaw models list --provider openai-codex` after auth and sets primary to `gpt-5.5` if present (Pro), else `gpt-4o` (Plus).
+The wizard probes `openclaw models list --json` for `openai/gpt-5.5` and sets it primary if present (Pro), else `openai/gpt-5.4` (Plus). Note: Codex models register under `openai/*` (the `openai-codex` profile only backs auth), so `--provider openai-codex` lists nothing, and the JSON flag is `--json` not `--format json` — both verified on a live 2026.5.27 bot.
 
 **Known issue #74212 (2026-05):** in some SSH sessions OpenClaw masks the device-pairing code as `[shown on the local device only]`. Workaround: ensure `ssh -tt` is used (forces a TTY); if the mask persists, run `openclaw models auth login` in a fresh interactive SSH session.
 
